@@ -6,7 +6,7 @@ on:
       lan_ip:
         description: 'LAN IP地址'
         required: false
-        default: '192.168.10.1'
+        default: '10.10.10.1'
       os_name:
         description: '系统名称'
         required: false
@@ -19,7 +19,7 @@ on:
 env:
   REPO_URL: https://github.com/istoreos/istoreos
   REPO_BRANCH: istoreos-24.10
-  ARCHITECTURE: rk35xx-24.10
+  ARCHITECTURE: xgpv3
   FEEDS_CONF: feeds.conf
   CONFIG_FILE: .config
   DIY_P1_SH: scripts/diy-part1.sh
