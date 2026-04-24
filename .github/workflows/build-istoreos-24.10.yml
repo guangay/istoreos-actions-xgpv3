@@ -1,0 +1,153 @@
+# ============================================
+# iStoreOS 24.10 RK3568 构建 Workflow
+# 目标设备: nlnet_xiguapi-v3
+# ============================================
+
+name: Build iStoreOS 24.10 (RK3568)
+
+on:
+  workflow_dispatch:
+    inputs:
+      lan_ip:
+        description: 'LAN IP 地址'
+        required: false
+        default: '10.10.10.1.1'
+        type: string
+      os_name:
+        description: '系统名称'
+        required: false
+        default: 'iStore OS'
+        type: string
+      enable_wifi:
+        description: '启用 WiFi'
+        required: false
+        default: 'false'
+        type: boolean
+
+  schedule:
+    - cron: '0 17 * * 1'
+
+env:
+  REPO_URL: https://github.com/istoreos/istoreos
+  REPO_BRANCH: istoreos-24.10
+  ARCHITECTURE: rk35xx-24.10
+  TZ: Asia/Shanghai
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 600
+
+    steps:
+      - name: 设置时区
+        run: sudo timedatectl set-timezone $TZ
+
+      - name: 安装依赖
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq \
+            build-essential clang flex g++ gcc gettext git \
+            libncurses-dev libssl-dev python3 python3-pip \
+            rsync unzip zlib1g-dev swig bc bison autoconf \
+            ccache file time meson
+
+      - name: 克隆源码
+        run: |
+          git clone --depth 1 -b ${{ env.REPO_BRANCH }} ${{ env.REPO_URL }} istoreos
+
+      - name: 获取配置和设备树
+        run: |
+          # 克隆配置仓库（包含设备树和 DIY 脚本）
+          git clone --depth 1 https://github.com/guangay/istoreos-actions-xgpv3.git configs_temp
+          mkdir -p istoreos/configs
+          cp -r configs_temp/configs/* istoreos/configs/ 2>/dev/null || true
+          cp -r configs_temp/files/* istoreos/ 2>/dev/null || true
+          rm -rf configs_temp
+
+      - name: 缓存构建目录
+        uses: actions/cache@v4
+        with:
+          path: |
+            istoreos/staging_dir
+            istoreos/build_dir
+            istoreos/dl
+          key: istoreos-${{ env.ARCHITECTURE }}-${{ github.run_id }}
+          restore-keys: |
+            istoreos-${{ env.ARCHITECTURE }}-
+
+      - name: 初始化 feeds
+        run: |
+          cd istoreos
+          ./scripts/feeds update -a
+          ./scripts/feeds install -a
+
+      - name: 运行 DIY 脚本
+        run: |
+          cd istoreos
+          chmod +x files/diy-part2.sh
+          # 设置 GITHUB_WORKSPACE 指向 istoreos 目录
+          export GITHUB_WORKSPACE="$PWD"
+          bash files/diy-part2.sh
+
+      - name: 加载默认配置
+        run: |
+          cd istoreos
+          make defconfig
+
+      - name: 配置目标设备
+        run: |
+          cd istoreos
+          echo "CONFIG_TARGET_DEVICE_rockchip_armv8_DEVICE_nlnet_xiguapi-v3=y" >> .config
+          echo "# CONFIG_TARGET_ALL_PROFILES is not set" >> .config
+
+      - name: 配置 LAN IP
+        if: github.event.inputs.lan_ip != ''
+        run: |
+          cd istoreos
+          sed -i "s/CONFIG_LAN_IPADDR=.*/CONFIG_LAN_IPADDR='${{ github.event.inputs.lan_ip }}'/g" .config
+
+      - name: 配置系统名称
+        if: github.event.inputs.os_name != ''
+        run: |
+          cd istoreos
+          sed -i "s/CONFIG_IB_DISTRIBUTOR=.*/CONFIG_IB_DISTRIBUTOR='${{ github.event.inputs.os_name }}'/g" .config
+
+      - name: 启用 WiFi
+        if: github.event.inputs.enable_wifi == 'true'
+        run: |
+          cd istoreos
+          echo "CONFIG_PACKAGE_kmod-mt7915e=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-mt7603e=y" >> .config
+
+      - name: 下载软件包
+        run: |
+          cd istoreos
+          make download -j$(nproc)
+          find dl -size -1024c -exec rm -f {} \; 2>/dev/null || true
+
+      - name: 编译固件
+        run: |
+          cd istoreos
+          make -j$(nproc) V=s || make -j4 V=s || make -j1 V=s
+
+      - name: 整理产物
+        run: |
+          cd istoreos
+          mkdir -p output
+          find bin -name "*.bin" -o -name "*.img" -o -name "*.tar.gz" 2>/dev/null | xargs -I {} cp {} output/ 2>/dev/null || true
+          ls -lh output/ || echo "无固件产物"
+
+      - name: 上传固件产物
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: istoreos-${{ env.ARCHITECTURE }}-${{ github.run_number }}
+          path: istoreos/output/
+          retention-days: 30
+
+      - name: 清理磁盘空间
+        if: always()
+        run: |
+          sudo docker system prune -af || true
+          sudo apt-get clean
+          rm -rf /var/lib/apt/lists/* /tmp/* 2>/dev/null || true
