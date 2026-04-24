@@ -5,7 +5,7 @@ on:
     inputs:
       lan_ip:
         description: 'LAN IP'
-        default: '192.168.10.1'
+        default: '10.10.10.1.1'
         required: true
       os_name:
         description: '系统名称'
