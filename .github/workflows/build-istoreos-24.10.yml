@@ -6,7 +6,7 @@ on:
       lan_ip:
         description: 'LAN IP地址'
         required: false
-        default: '10.10.10.1'
+        default: '192.168.10.1'
       os_name:
         description: '系统名称'
         required: false
@@ -22,12 +22,9 @@ env:
   ARCHITECTURE: rk35xx-24.10
   FEEDS_CONF: feeds.conf
   CONFIG_FILE: .config
-  DIY_P1_SH: scripts/diy-part1.sh
-  DIY_P2_SH: scripts/diy-part2.sh
+  DIY_P2_SH: rk35xx-24.10/diy-part2.sh
   DEBIAN_FRONTEND: noninteractive
-  TZ: Asia/Shanghai
-
-jobs:
+  TZ: Asia/Shanghaijobs:
   build:
     runs-on: ubuntu-latest
     timeout-minutes: 600
@@ -69,9 +66,7 @@ jobs:
         run: |
           cd $GITHUB_WORKSPACE/istoreos-actions
           [ -e $ARCHITECTURE/$FEEDS_CONF ] && cp $ARCHITECTURE/$FEEDS_CONF $GITHUB_WORKSPACE/openwrt/$FEEDS_CONF
-          chmod +x $DIY_P1_SH
           cd $GITHUB_WORKSPACE/openwrt
-          $GITHUB_WORKSPACE/istoreos-actions/$DIY_P1_SH
 
       - name: 更新 feeds
         run: cd $GITHUB_WORKSPACE/openwrt && ./scripts/feeds update -a
@@ -84,7 +79,7 @@ jobs:
           cd $GITHUB_WORKSPACE/istoreos-actions
           [ -e files ] && cp -r files $GITHUB_WORKSPACE/openwrt/
           [ -e $ARCHITECTURE/$CONFIG_FILE ] && cp $ARCHITECTURE/$CONFIG_FILE $GITHUB_WORKSPACE/openwrt/$CONFIG_FILE
-          chmod +x $DIY_P2_SH
+          chmod +x $GITHUB_WORKSPACE/istoreos-actions/$DIY_P2_SH
           cd $GITHUB_WORKSPACE/openwrt
           $GITHUB_WORKSPACE/istoreos-actions/$DIY_P2_SH $REPO_BRANCH $ARCHITECTURE
 
@@ -93,7 +88,7 @@ jobs:
           cd $GITHUB_WORKSPACE/openwrt
           SET_IP="${{ github.event.inputs.lan_ip }}"
           [ -z "$SET_IP" ] && SET_IP="192.168.10.1"
-          sed -i "s/192\.168\.[0-9]*\.[0-9]*/$SET_IP/g" package/base-files/files/bin/config_generate
+          sed -i "s/192\.[0-9]*\.[0-9]*/$SET_IP/g" package/base-files/files/bin/config_generate
 
       - name: 设置系统名称
         run: |
@@ -129,7 +124,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: rk35xx-24.10-固件
+          name: xgpv3-固件
           path: |
             /mnt/workdir/openwrt/bin/targets/**/*.img.gz
             /mnt/workdir/openwrt/bin/targets/**/*.tar.gz
