@@ -1,0 +1,125 @@
+name: Build iStoreOS 24.10
+
+on:
+  # 手动触发
+  workflow_dispatch:
+    inputs:
+      ARCHITECTURE:
+        description: 'Architecture'
+        required: true
+        default: 'rk35xx-24.10'
+        type: choice
+        options:
+          - rk35xx-24.10
+  # 定时触发：每天北京时间 11:00 (UTC 03:00)
+  schedule:
+    - cron: '0 3 * * *'
+
+env:
+  ARCHITECTURE: ${{ github.event.inputs.ARCHITECTURE || 'rk35xx-24.10' }}
+  FEEDS_CONF: feeds.conf
+  CONFIG_FILE: .config
+  DIY_P1_SH: ${{ github.server_url}}/${{ github.repository }}/raw/main/diy-part1.sh
+  DIY_P2_SH: ${{ github.server_url}}/${{ github.repository }}/raw/main/diy-part2.sh
+  RELEASES_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+  TZ: Asia/Shanghai
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 600
+
+    name: Build ${{ env.ARCHITECTURE }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Initialize submodules
+        run: git submodule update --init --recursive
+
+      - name: Download feeds.conf
+        run: |
+          mkdir -p ${{ env.ARCHITECTURE }}
+          wget -qO ${{ env.ARCHITECTURE }}/${{ env.FEEDS_CONF }} https://${{ github.server_url}}/${{ github.repository }}/raw/main/${{ env.ARCHITECTURE }}/${{ env.FEEDS_CONF }}
+
+      - name: Download .config
+        run: |
+          wget -qO ${{ env.ARCHITECTURE }}/${{ env.CONFIG_FILE }} https://${{ github.server_url}}/${{ github.repository }}/raw/main/${{ env.ARCHITECTURE }}/${{ env.CONFIG_FILE }}
+
+      - name: Read .config
+        id: config
+        run: |
+          echo "ARCH=$(grep -E "^CONFIG_TARGET_BOARD=" ${{ env.ARCHITECTURE }}/${{ env.CONFIG_FILE }} | cut -d'=' -f2)" >> $GITHUB_OUTPUT
+          echo "SOC=$(grep -E "^CONFIG_TARGET_BOARD=" ${{ env.ARCHITECTURE }}/${{ env.CONFIG_FILE }} | cut -d'_' -f3)" >> $GITHUB_OUTPUT
+
+      - name: Prepare directories
+        run: |
+          mkdir -p openwrt
+          mkdir -p files
+          mkdir -p staging_dir
+          mkdir -p toolchain
+
+      - name: Start compile
+        run: |
+          cd openwrt
+          docker run \
+            --rm \
+            -v "${{ github.server_path }}:${{ github.workspace }}/openwrt" \
+            -v "${{ github.workspace }}/staging_dir:/staging_dir" \
+            -v "${{ github.workspace }}/toolchain:/toolchain" \
+            -w /openwrt \
+            -e "ARCH=${{ steps.config.outputs.ARCH }}" \
+            -e "SOC=${{ steps.config.outputs.SOC }}" \
+            -e "FEEDS_CONF=${{ env.ARCHITECTURE }}/${{ env.FEEDS_CONF }}" \
+            -e "CONFIG_FILE=${{ env.ARCHITECTURE }}/${{ env.CONFIG_FILE }}" \
+            -e "DIY_P1_SH=${{ env.DIY_P1_SH }}" \
+            -e "DIY_P2_SH=${{ env.DIY_P2_SH }}" \
+            -e "TZ=${{ env.TZ }}" \
+            p3terx/istoreos-build:latest
+
+      - name: Copy firmware to root directory
+        run: |
+          mkdir -p firmware
+          cp openwrt/bin/targets/*/*/packages/* firmware/ 2>/dev/null || true
+          cp openwrt/bin/targets/*/*/*comb*.bin firmware/ 2>/dev/null || true
+          cp openwrt/bin/targets/*/*/*ext4*.bin firmware/ 2>/dev/null || true
+
+      - name: Upload to GitHub Release
+        if: github.event_name != 'workflow_dispatch' || github.event.inputs.ARCHITECTURE != ''
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: istoreos-${{ env.ARCHITECTURE }}-${{ github.run_number }}
+          name: iStoreOS ${{ env.ARCHITECTURE }} Build #${{ github.run_number }}
+          body: |
+            ## iStoreOS ${{ env.ARCHITECTURE }} 自动构建版本
+            
+            - **编译时间**: ${{ fromJSON('{"created":"'$(date +"%Y-%m-%d %H:%M:%S")'"}').created }}
+            - **设备**: xiguapi-v3 (RK3568)
+            - **版本**: 24.10
+            
+            ### 包含驱动
+            - QModem 5G模组管理
+            - xgp-v3 屏幕驱动
+            
+          files: |
+            openwrt/bin/targets/**/*.bin
+            openwrt/bin/targets/**/*.img
+            openwrt/bin/targets/**/*.tar.gz
+            !openwrt/bin/targets/**/packages/**
+          draft: false
+          prerelease: true
+          token: ${{ env.GITHUB_TOKEN }}
+        continue-on-error: true
+
+      - name: Upload firmware artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenWrt_firmware_${{ env.ARCHITECTURE }}_${{ github.run_number }}
+          path: |
+            openwrt/bin/targets/*/*/*.bin
+            openwrt/bin/targets/*/*/*.img
+            openwrt/bin/targets/*/*/*.tar.gz
+            !openwrt/bin/targets/*/*/packages/**
+          retention-days: 7
+          compression-level: 9
