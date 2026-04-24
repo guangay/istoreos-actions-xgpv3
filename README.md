@@ -20,5 +20,6 @@
 | X86-64-EFI | storeos-x86-64-generic-squashfs-combined-efi.img.gz |
 
 通过转接板连接的 PCIe 5G 模块在刷机后需要断电（直接拔DC插头，拔市电那头要多等几秒电容放电）一次，否则大概率找不到模块，转接板硬件原因导致模块在重启时不能正常下电。
+###添加了对屏幕和5g模组的支持
 屏幕驱动https://github.com/junhong-l/xgp-v3-screen
 QModem https://github.com/FUjr/QModem
