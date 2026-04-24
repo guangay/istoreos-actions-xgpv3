@@ -20,6 +20,9 @@
 
 
 ###添加了对屏幕和5g模组的支持
+
+
+
 屏幕驱动https://github.com/junhong-l/xgp-v3-screen
 
 
