@@ -53,17 +53,38 @@ jobs:
         env:
           DEBIAN_FRONTEND: noninteractive
         run: |
+          # 清理冲突软件
           sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /etc/mysql /etc/php /usr/local/lib/android /opt/ghc
-          sudo -E apt-get -qq update
-          sudo -E apt-get -qq install -y build-essential clang flex g++ gawk gcc-multilib gettext \
-            git libncurses5-dev libssl-dev rsync unzip zlib1g-dev swig libpython3-dev \
-            python3 python3-pip python3-venv python3-dev aria2 jq subversion ccache rename libelf-dev libgmp-dev libmpc-dev libmpfr-dev
-          pip3 install --user pyelftools pysocks unidecode requests || true
           sudo docker rmi `docker images -q` || true
           sudo docker image prune -a -f || true
-          sudo -E apt-get -y purge azure-cli ghc* zulu* hhvm llvm* firefox google* dotnet* powershell openjdk* adoptopenjdk* mysql* php* mongodb* dotnet* moby* snapd* android* || true
-          sudo -E apt-get -qq autoremove --purge
+
+          # 更新软件源和升级
+          sudo -E apt-get -qq update
+          sudo -E apt-get -qq full-upgrade -y || true
           sudo -E apt-get -qq clean
+
+          # 安装完整编译依赖
+          sudo -E apt-get -qq install -y \
+            ack antlr3 asciidoc autoconf automake autopoint binutils bison \
+            build-essential bzip2 ccache clang cmake cpio curl \
+            device-tree-compiler flex gawk gcc-multilib g++-multilib gettext \
+            genisoimage git gperf haveged help2man intltool \
+            libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev \
+            libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev \
+            libncurses5-dev libncursesw5-dev libpython3-dev \
+            libreadline-dev libssl-dev libtool llvm lrzsz \
+            libnsl-dev ninja-build p7zip p7zip-full patch pkgconf \
+            python3 python3-pyelftools python3-setuptools \
+            qemu-utils rsync scons squashfs-tools subversion \
+            swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev
+
+          pip3 install --user pyelftools pysocks unidecode requests || true
+
+          # 清理不需要的软件
+          sudo -E apt-get -y purge azure-cli ghc* zulu* hhvm llvm* firefox google* dotnet* \
+            powershell openjdk* adoptopenjdk* mysql* php* mongodb* moby* snapd* android* || true
+          sudo -E apt-get -qq autoremove --purge
+
           sudo timedatectl set-timezone "$TZ"
           sudo mkdir -p /workdir
           sudo chown $USER:$GROUPS /workdir
@@ -92,12 +113,17 @@ jobs:
         run: |
           cp user-repo/rk35xx-24.10/feeds.conf openwrt/feeds.conf.default
           sed -i '/src-include.*feeds.conf.default/d' openwrt/feeds.conf.default
-          chmod +x user-repo/$DIY_P1_SH
+          chmod +x $GITHUB_WORKSPACE/$DIY_P1_SH
           cd openwrt
-          $GITHUB_WORKSPACE/user-repo/$DIY_P1_SH || true
+          $GITHUB_WORKSPACE/$DIY_P1_SH || true
 
       - name: 更新 feeds
-        run: cd openwrt && ./scripts/feeds update -a
+        run: |
+          cd openwrt
+          # 清理旧 feeds，强制重新下载
+          rm -rf feeds
+          ./scripts/feeds update -a
+          echo "✅ feeds 已更新"
 
       - name: 克隆 xgp_screen 屏幕驱动
         run: |
@@ -113,9 +139,9 @@ jobs:
         run: |
           [ -e user-repo/files ] && cp -r user-repo/files openwrt/files
           [ -e user-repo/rk35xx-24.10/.config ] && cp user-repo/rk35xx-24.10/.config openwrt/.config
-          chmod +x user-repo/$DIY_P2_SH
+          chmod +x $GITHUB_WORKSPACE/$DIY_P2_SH
           cd openwrt
-          $GITHUB_WORKSPACE/user-repo/$DIY_P2_SH || true
+          $GITHUB_WORKSPACE/$DIY_P2_SH || true
 
       - name: 设置 LAN IP 地址
         run: |
