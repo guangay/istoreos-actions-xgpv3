@@ -32,18 +32,18 @@ sed -i 's/CONFIG_PACKAGE_luci-i18n-ddnsto-zh-cn=y/CONFIG_PACKAGE_luci-i18n-ddnst
 sed -i 's/CONFIG_PACKAGE_luci-theme-bootstrap=y/CONFIG_PACKAGE_luci-theme-bootstrap=n/' .config
 
 # =====================================================
-# 添加 xgp-v3 屏幕驱动 (从 feeds 安装)
+# 添加 xgp-v3 屏幕驱动 (已在 workflow 中单独克隆)
+# 注意: xgp-v3-screen 是独立包，不是 feeds 源，无需通过 feeds 安装
 # =====================================================
-echo ">>> 安装 xgp-v3 屏幕驱动..."
-./scripts/feeds update xgp_screen
-./scripts/feeds install -a -p xgp_screen
+# echo ">>> 安装 xgp-v3 屏幕驱动..."
+# 已由 workflow step '克隆 xgp_screen 屏幕驱动' 单独处理
 
 # =====================================================
-# 添加 QModem 5G模组管理 (从 feeds 安装)
+# 添加 QModem 5G模组管理 (已在 workflow 中单独处理)
+# 注意: modem_feeds 是独立包，不是 feeds 源
 # =====================================================
-echo ">>> 安装 QModem 5G模组管理..."
-./scripts/feeds update modem
-./scripts/feeds install -a -p modem
+# echo ">>> 安装 QModem 5G模组管理..."
+# 已由 feeds install -a -p modem 在加载 feeds 时处理
 
 # =====================================================
 # xgp-v3 追加配置
