@@ -23,9 +23,10 @@ env:
   REPO_BRANCH: istoreos-24.10
   DEVICE_NAME: nlnet_xiguapi-v3
   DEVICE_TREE: rk3568-xiguapi-v3.dts
-  FEEDS_CONF: feeds.conf
+  FEEDS_CONF: rk35xx-24.10/feeds.conf
   DIY_P1_SH: diy-part1.sh
   DIY_P2_SH: diy-part2.sh
+  CONFIG_FILE: rk35xx-24.10/.config
   UPLOAD_FIRMWARE: true
   TZ: Asia/Shanghai
 
@@ -84,12 +85,13 @@ jobs:
 
       - name: 加载 feeds 配置
         env:
-          FEEDS_CONF_PATH: feeds.conf
+          FEEDS_CONF_PATH: rk35xx-24.10/feeds.conf
         run: |
-          [ -e $FEEDS_CONF_PATH ] && mv $FEEDS_CONF_PATH openwrt/$FEEDS_CONF
+          [ -e $FEEDS_CONF_PATH ] && cp $FEEDS_CONF_PATH openwrt/feeds.conf.default
+          [ -e feeds.conf ] && cp feeds.conf openwrt/feeds.conf.default
           chmod +x $DIY_P1_SH
           cd openwrt
-          $GITHUB_WORKSPACE/$DIY_P1_SH
+          $GITHUB_WORKSPACE/$DIY_P1_SH || true
 
       - name: 更新 feeds
         run: cd openwrt && ./scripts/feeds update -a
@@ -106,11 +108,14 @@ jobs:
 
       - name: 加载自定义配置
         run: |
-          [ -e files ] && mv files openwrt/files
-          [ -e .config ] && mv .config openwrt/.config
+          # 复制配置文件到 openwrt 目录
+          [ -e files ] && cp -r files openwrt/files
+          [ -e rk35xx-24.10/.config ] && cp rk35xx-24.10/.config openwrt/.config
+          [ -e .config ] && cp .config openwrt/.config
+
           chmod +x $DIY_P2_SH
           cd openwrt
-          $GITHUB_WORKSPACE/$DIY_P2_SH
+          $GITHUB_WORKSPACE/$DIY_P2_SH || true
 
       - name: 设置 LAN IP 地址
         run: |
@@ -133,6 +138,17 @@ jobs:
         id: package
         run: |
           cd openwrt
+
+          # 检查 .config 是否存在
+          echo "=== 检查配置文件 ==="
+          if [ ! -f .config ]; then
+            echo "❌ 错误: .config 文件不存在!"
+            ls -la
+            ls -la rk35xx-24.10/ 2>/dev/null || echo "rk35xx-24.10 目录不存在"
+            exit 1
+          fi
+          echo "✅ .config 存在 ($(wc -l < .config) 行)"
+
           make defconfig
 
           # =====================================================
@@ -173,17 +189,29 @@ jobs:
           echo "uboot-rockchip 状态:"
           grep -E "^#?CONFIG_PACKAGE_uboot-rockchip" .config | head -5 || echo "未找到 uboot-rockchip 配置"
 
-          # 复制设备树到 uboot-rockchip 源码目录
-          echo ">>> 复制设备树到 uboot-rockchip 源码..."
-          if [ -f "target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/${DEVICE_TREE}" ]; then
+          # 复制设备树到 uboot-rockchip
+          echo "=== 复制设备树文件 ==="
+          # 设备树在用户仓库中，需要从 openwrt/ 返回上级目录查找
+          DTS_SOURCE="../target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/${DEVICE_TREE}"
+
+          # 检查设备树是否存在
+          if [ -f "$DTS_SOURCE" ]; then
             mkdir -p package/boot/uboot-rockchip/files/arch/arm64/boot/dts/rockchip/
-            cp -f target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/${DEVICE_TREE} \
-                  package/boot/uboot-rockchip/files/arch/arm64/boot/dts/rockchip/
-            echo "✅ 设备树 ${DEVICE_TREE} 已复制到 uboot-rockchip"
+            cp -f "$DTS_SOURCE" package/boot/uboot-rockchip/files/arch/arm64/boot/dts/rockchip/
+            echo "============================================"
+            echo "✅ 设备树复制成功!"
+            echo "============================================"
+            echo "源文件: $DTS_SOURCE"
+            echo "目标位置: package/boot/uboot-rockchip/files/arch/arm64/boot/dts/rockchip/${DEVICE_TREE}"
+            echo "文件大小: $(ls -lh package/boot/uboot-rockchip/files/arch/arm64/boot/dts/rockchip/${DEVICE_TREE} | awk '{print $5}')"
+            echo "设备树内容预览:"
+            head -20 package/boot/uboot-rockchip/files/arch/arm64/boot/dts/rockchip/${DEVICE_TREE}
+            echo "============================================"
           else
-            echo "⚠️ 警告: 设备树文件不存在: target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/${DEVICE_TREE}"
-            echo ">>> 检查 target/linux/ 目录结构..."
-            find target/linux -name "*.dts" -o -name "*.dtb" 2>/dev/null | head -10 || echo "没有找到设备树文件"
+            echo "⚠️ 警告: 设备树文件不存在: ${DTS_SOURCE}"
+            echo ">>> 搜索设备树文件..."
+            find . -name "*.dts" -path "*rockchip*" 2>/dev/null | head -10 || echo "没有找到 rockchip 设备树"
+            ls -la target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/ 2>/dev/null || echo "设备树目录不存在"
           fi
 
           # 下载软件包
