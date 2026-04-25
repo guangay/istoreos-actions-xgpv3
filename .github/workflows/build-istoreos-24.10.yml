@@ -84,11 +84,9 @@ jobs:
           prefix: ${{ github.workspace }}/openwrt
 
       - name: 加载 feeds 配置
-        env:
-          FEEDS_CONF_PATH: rk35xx-24.10/feeds.conf
         run: |
-          [ -e $FEEDS_CONF_PATH ] && cp $FEEDS_CONF_PATH openwrt/feeds.conf.default
-          [ -e feeds.conf ] && cp feeds.conf openwrt/feeds.conf.default
+          # 使用 rk35xx-24.10/feeds.conf
+          cp rk35xx-24.10/feeds.conf openwrt/feeds.conf.default
           chmod +x $DIY_P1_SH
           cd openwrt
           $GITHUB_WORKSPACE/$DIY_P1_SH || true
