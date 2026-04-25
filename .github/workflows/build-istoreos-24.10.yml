@@ -21,12 +21,12 @@ on:
 env:
   REPO_URL: https://github.com/istoreos/istoreos
   REPO_BRANCH: istoreos-24.10
+  # 用户仓库配置
+  USER_REPO_URL: https://github.com/guangay/istoreos-actions-xgpv3
   DEVICE_NAME: nlnet_xiguapi-v3
   DEVICE_TREE: rk3568-xiguapi-v3.dts
-  FEEDS_CONF: rk35xx-24.10/feeds.conf
   DIY_P1_SH: diy-part1.sh
   DIY_P2_SH: diy-part2.sh
-  CONFIG_FILE: rk35xx-24.10/.config
   UPLOAD_FIRMWARE: true
   TZ: Asia/Shanghai
 
@@ -69,6 +69,13 @@ jobs:
           sudo mkdir -p /workdir
           sudo chown $USER:$GROUPS /workdir
 
+      - name: 克隆用户仓库
+        run: |
+          # 克隆用户仓库（包含设备树和配置文件）
+          git clone $USER_REPO_URL user-repo
+          echo "✅ 用户仓库已克隆"
+          ls -la user-repo/
+
       - name: 克隆源码
         working-directory: /workdir
         run: |
@@ -85,13 +92,13 @@ jobs:
 
       - name: 加载 feeds 配置
         run: |
-          # 使用 rk35xx-24.10/feeds.conf
-          cp rk35xx-24.10/feeds.conf openwrt/feeds.conf.default
+          # 从用户仓库复制 feeds.conf
+          cp user-repo/rk35xx-24.10/feeds.conf openwrt/feeds.conf.default
           # 修复: 删除自我引用的 src-include 行（会导致重复定义）
           sed -i '/src-include.*feeds.conf.default/d' openwrt/feeds.conf.default
-          chmod +x $DIY_P1_SH
+          chmod +x user-repo/$DIY_P1_SH
           cd openwrt
-          $GITHUB_WORKSPACE/$DIY_P1_SH || true
+          $GITHUB_WORKSPACE/user-repo/$DIY_P1_SH || true
 
       - name: 更新 feeds
         run: cd openwrt && ./scripts/feeds update -a
@@ -108,14 +115,13 @@ jobs:
 
       - name: 加载自定义配置
         run: |
-          # 复制配置文件到 openwrt 目录
-          [ -e files ] && cp -r files openwrt/files
-          [ -e rk35xx-24.10/.config ] && cp rk35xx-24.10/.config openwrt/.config
-          [ -e .config ] && cp .config openwrt/.config
+          # 从用户仓库复制配置文件到 openwrt 目录
+          [ -e user-repo/files ] && cp -r user-repo/files openwrt/files
+          [ -e user-repo/rk35xx-24.10/.config ] && cp user-repo/rk35xx-24.10/.config openwrt/.config
 
-          chmod +x $DIY_P2_SH
+          chmod +x user-repo/$DIY_P2_SH
           cd openwrt
-          $GITHUB_WORKSPACE/$DIY_P2_SH || true
+          $GITHUB_WORKSPACE/user-repo/$DIY_P2_SH || true
 
       - name: 设置 LAN IP 地址
         run: |
@@ -144,7 +150,7 @@ jobs:
           if [ ! -f .config ]; then
             echo "❌ 错误: .config 文件不存在!"
             ls -la
-            ls -la ../rk35xx-24.10/ 2>/dev/null || echo "rk35xx-24.10 目录不存在"
+            ls -la ../user-repo/rk35xx-24.10/ 2>/dev/null || echo "rk35xx-24.10 目录不存在"
             exit 1
           fi
           echo "✅ .config 存在 ($(wc -l < .config) 行)"
@@ -191,8 +197,8 @@ jobs:
 
           # 复制设备树到 uboot-rockchip
           echo "=== 复制设备树文件 ==="
-          # 设备树在用户仓库中，需要从 openwrt/ 返回上级目录查找
-          DTS_SOURCE="../target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/${DEVICE_TREE}"
+          # 从用户仓库目录复制设备树
+          DTS_SOURCE="../user-repo/target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/${DEVICE_TREE}"
 
           # 检查设备树是否存在
           if [ -f "$DTS_SOURCE" ]; then
@@ -210,8 +216,8 @@ jobs:
           else
             echo "⚠️ 警告: 设备树文件不存在: ${DTS_SOURCE}"
             echo ">>> 搜索设备树文件..."
-            find . -name "*.dts" -path "*rockchip*" 2>/dev/null | head -10 || echo "没有找到 rockchip 设备树"
-            ls -la target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/ 2>/dev/null || echo "设备树目录不存在"
+            find ../user-repo -name "*.dts" -path "*rockchip*" 2>/dev/null | head -10 || echo "没有找到 rockchip 设备树"
+            ls -la ../user-repo/target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/ 2>/dev/null || echo "设备树目录不存在"
           fi
 
           # 下载软件包
