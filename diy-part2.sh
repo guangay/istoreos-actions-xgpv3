@@ -108,19 +108,20 @@ elif ! grep -q "^CONFIG_PACKAGE_uboot-rockchip=y" .config 2>/dev/null; then
     echo "CONFIG_PACKAGE_uboot-rockchip=y" >> .config
 fi
 
-# 选择 RK3568 的 U-Boot 目标 (使用 easepi-rk3568 作为通用目标)
-if grep -q "^# CONFIG_PACKAGE_uboot-rockchip-easepi-rk3568 is not set" .config 2>/dev/null; then
-    sed -i 's/^# CONFIG_PACKAGE_uboot-rockchip-easepi-rk3568 is not set/CONFIG_PACKAGE_uboot-rockchip-easepi-rk3568=y/' .config
-elif ! grep -q "^CONFIG_PACKAGE_uboot-rockchip-easepi-rk3568=y" .config 2>/dev/null; then
-    echo "CONFIG_PACKAGE_uboot-rockchip-easepi-rk3568=y" >> .config
+# 禁用 easepi-rk3568 variant（使用 xgp-v3 专用设备树）
+if grep -q "^CONFIG_PACKAGE_uboot-rockchip-easepi-rk3568=y" .config 2>/dev/null; then
+    sed -i 's/^CONFIG_PACKAGE_uboot-rockchip-easepi-rk3568=y/# CONFIG_PACKAGE_uboot-rockchip-easepi-rk3568 is not set/' .config
 fi
+echo "# CONFIG_PACKAGE_uboot-rockchip-easepi-rk3568 is not set" >> .config
+echo "CONFIG_PACKAGE_uboot-rockchip-easepi-rk3568=n" >> .config
 
-echo "✅ U-Boot 包已切换到 uboot-rockchip (支持 RK3568)"
+echo "✅ U-Boot 使用 xgp-v3 专用设备树 (已禁用 easepi-rk3568)"
 
 # 复制设备树到 uboot-rockchip 源码目录 (uboot-rockchip 使用 arm64 路径)
 echo ">>> 复制设备树到 uboot-rockchip 源码..."
 DEVICE_TREE="rk3568-xiguapi-v3.dts"
-DTS_SOURCE="target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/${DEVICE_TREE}"
+# 从 openwrt 目录返回上级，查找用户仓库中的设备树文件
+DTS_SOURCE="../target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/${DEVICE_TREE}"
 DTS_TARGET_DIR="package/boot/uboot-rockchip/files/arch/arm64/boot/dts/rockchip/"
 
 if [ -f "${DTS_SOURCE}" ]; then
@@ -136,7 +137,7 @@ fi
 echo "============================================"
 echo "✅ 编译配置完成!"
 echo "✅ 已添加: QModem + xgp-v3 屏幕驱动"
-echo "✅ 已禁用: lcdsimple + luci-app-oled"
+echo "✅ 已禁用: lcdsimple + luci-app-oled + easepi-rk3568"
 echo "✅ 已修复: U-Boot (uboot-rk35xx -> uboot-rockchip)"
-echo "✅ 已修复: U-Boot 设备树"
+echo "✅ 设备树: 使用 xgp-v3 专用 rk3568-xiguapi-v3.dts"
 echo "============================================"
