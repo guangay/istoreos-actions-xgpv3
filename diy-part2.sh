@@ -58,18 +58,21 @@ echo "CONFIG_PACKAGE_webdav2=n" >> .config
 echo "✅ 已禁用 webdav2"
 
 # =====================================================
-# 复制 xgp-v3 设备树文件
+# 复制 xgp-v3 设备树文件 (给内核用)
 # =====================================================
-echo ">>> 检查 xgp-v3 设备树文件..."
+echo ">>> 复制 xgp-v3 设备树文件..."
 
-# 设备树文件由工作流中的 "下载软件包并修复uboot" 步骤负责复制
-# 此处仅检查是否存在，无需报错终止
+# 创建设备树目录
+mkdir -p target/linux/rockchip/files/arch/arm64/boot/dts/rockchip
 
-# 验证设备树文件 (由工作流复制)
-if [ -f "target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/rk3568-xiguapi-v3.dts" ]; then
-    echo "✅ 设备树文件已就位"
+# 从用户仓库复制设备树 (使用绝对路径)
+DTS_SOURCE="${GITHUB_WORKSPACE}/user-repo/target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/rk3568-xiguapi-v3.dts"
+
+if [ -f "$DTS_SOURCE" ]; then
+    cp "$DTS_SOURCE" target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/
+    echo "✅ 内核设备树文件已复制"
 else
-    echo "ℹ️ 设备树将由工作流后续步骤复制"
+    echo "⚠️ 未找到设备树文件: $DTS_SOURCE"
 fi
 
 # =====================================================
