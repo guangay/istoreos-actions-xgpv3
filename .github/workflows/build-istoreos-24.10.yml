@@ -1,0 +1,145 @@
+name: Build iStoreOS 24.10 (RK3568)
+
+on:
+  workflow_dispatch:
+    inputs:
+      lan_ip:
+        description: 'LAN IP'
+        default: '192.168.10.1'
+        required: true
+      os_name:
+        description: '系统名称'
+        default: 'iStore OS'
+        required: true
+      enable_wifi:
+        description: '启用 WiFi'
+        default: 'false'
+        required: true
+  schedule:
+    - cron: '0 16 * * *'
+
+env:
+  TZ: Asia/Shanghai
+  REPO_URL: https://github.com/istoreos/istoreos.git
+  REPO_BRANCH: istoreos-24.10
+  ARCHITECTURE: rk35xx-24.10
+  DEVICE_NAME: nlnet_xiguapi-v3
+  CONFIG_REPO: https://github.com/guangay/istoreos-actions-xgpv3.git
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 600
+
+    steps:
+      - name: 准备完成
+        uses: actions/checkout@v4
+
+      - name: 检查服务器配置
+        run: |
+          echo "=== CPU信息 ==="
+          nproc
+          cat /proc/cpuinfo | grep "model name" | head -1
+          echo "=== 内存信息 ==="
+          free -h
+          echo "=== 磁盘信息 ==="
+          df -hT
+
+      - name: 初始化编译环境
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential clang flex g++ gcc gettext git \
+            libncurses-dev libssl-dev python3 python3-pip \
+            rsync unzip zlib1g-dev swig bc bison autoconf \
+            file time meson ccache
+
+      - name: 克隆源码
+        run: |
+          git clone --depth 1 -b ${{ env.REPO_BRANCH }} ${{ env.REPO_URL }} openwrt
+
+      - name: 克隆配置仓库
+        run: |
+          git clone --depth 1 ${{ env.CONFIG_REPO }} configs
+          cp -f configs/files/diy-part1.sh openwrt/
+          cp -f configs/files/diy-part2.sh openwrt/
+          cp -r configs/files/rk35xx-24.10/configs/* openwrt/configs/ 2>/dev/null || true
+          rm -rf configs
+
+      - name: 配置 ccache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.ccache
+          key: ccache-${{ env.REPO_BRANCH }}-${{ env.DEVICE_NAME }}
+          restore-keys: |
+            ccache-${{ env.REPO_BRANCH }}-
+            ccache-
+
+      - name: 加载自定义 feeds
+        run: |
+          chmod +x openwrt/diy-part1.sh
+          chmod +x openwrt/diy-part2.sh
+          cd openwrt
+          bash diy-part1.sh
+
+      - name: 更新 feeds
+        run: |
+          cd openwrt
+          ./scripts/feeds update -a
+
+      - name: 安装 feeds
+        run: |
+          cd openwrt
+          ./scripts/feeds install -a
+
+      - name: 加载自定义配置
+        run: |
+          cd openwrt
+          bash diy-part2.sh
+
+      - name: 设置 LAN IP 地址
+        run: |
+          cd openwrt
+          sed -i "s/192.168.100.1/${{ inputs.lan_ip }}/g" package/base-files/files/bin/config_generate
+
+      - name: 设置系统名称
+        run: |
+          cd openwrt
+          sed -i "s/iStore OS/${{ inputs.os_name }}/g" package/base-files/files/bin/config_generate
+
+      - name: 配置目标设备
+        run: |
+          cd openwrt
+          echo "CONFIG_TARGET_DEVICE_rockchip_armv8_DEVICE_${{ env.DEVICE_NAME }}=y" >> .config
+          echo "# CONFIG_TARGET_ALL_PROFILES is not set" >> .config
+
+      - name: 启用 WiFi
+        if: inputs.enable_wifi == 'true'
+        run: |
+          cd openwrt
+          echo "CONFIG_PACKAGE_kmod-mt7915e=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-mt7603e=y" >> .config
+
+      - name: 编译固件
+        run: |
+          cd openwrt
+          make -j$(nproc) V=s
+
+      - name: 整理固件文件
+        run: |
+          echo "=== 固件产物 ==="
+          find openwrt/bin/targets -name "*.img.gz" -o -name "*.bin" 2>/dev/null | head -20
+
+      - name: 上传固件
+        uses: actions/upload-artifact@v4
+        if: success()
+        with:
+          name: istoreos-${{ env.DEVICE_NAME }}-${{ github.run_number }}
+          path: |
+            openwrt/bin/targets/rockchip/armv8/**/*.img.gz
+            openwrt/bin/targets/rockchip/armv8/**/*.bin
+            openwrt/bin/targets/rockchip/armv8/**/*.tar.gz
+          retention-days: 30
