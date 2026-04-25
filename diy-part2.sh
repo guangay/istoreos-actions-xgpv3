@@ -90,32 +90,50 @@ CONFIG_PACKAGE_procps-ng-ps=y
 " >> .config
 
 # =====================================================
-# 修复 U-Boot 设备树 (解决编译错误)
+# 修复 RK3568 U-Boot 包 (解决编译错误)
 # =====================================================
-echo ">>> 修复 U-Boot 设备树..."
-DEVICE_TREE="rk3568-xiguapi-v3.dts"
+# 问题: nlnet_xiguapi-v3 是 RK3568 设备，但默认使用了 uboot-rk35xx 包
+# uboot-rk35xx 只支持 RK3528/RK3576，不支持 RK3568！
+# 解决: 切换到 uboot-rockchip 包，它支持 RK3568
+echo ">>> 修复 U-Boot 包配置 (RK3568 -> uboot-rockchip)..."
 
-if [ -f "target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/${DEVICE_TREE}" ]; then
-    mkdir -p package/boot/uboot-rk35xx/files/arch/arm64/boot/dts/rockchip/
-    cp -f target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/${DEVICE_TREE} \
-          package/boot/uboot-rk35xx/files/arch/arm64/boot/dts/rockchip/
-    echo "✅ U-Boot 设备树已复制: ${DEVICE_TREE}"
-    ls -la package/boot/uboot-rk35xx/files/arch/arm64/boot/dts/rockchip/${DEVICE_TREE}
+# 禁用 uboot-rk35xx (不支持 RK3568)
+sed -i 's/CONFIG_PACKAGE_uboot-rk35xx=y/# CONFIG_PACKAGE_uboot-rk35xx is not set/' .config
+
+# 启用 uboot-rockchip (支持 RK3568)
+if grep -q "^# CONFIG_PACKAGE_uboot-rockchip is not set" .config 2>/dev/null; then
+    sed -i 's/^# CONFIG_PACKAGE_uboot-rockchip is not set/CONFIG_PACKAGE_uboot-rockchip=y/' .config
+elif ! grep -q "^CONFIG_PACKAGE_uboot-rockchip=y" .config 2>/dev/null; then
+    echo "CONFIG_PACKAGE_uboot-rockchip=y" >> .config
+fi
+
+# 选择 RK3568 的 U-Boot 目标 (使用 easepi-rk3568 作为通用目标)
+if grep -q "^# CONFIG_PACKAGE_uboot-rockchip-easepi-rk3568 is not set" .config 2>/dev/null; then
+    sed -i 's/^# CONFIG_PACKAGE_uboot-rockchip-easepi-rk3568 is not set/CONFIG_PACKAGE_uboot-rockchip-easepi-rk3568=y/' .config
+elif ! grep -q "^CONFIG_PACKAGE_uboot-rockchip-easepi-rk3568=y" .config 2>/dev/null; then
+    echo "CONFIG_PACKAGE_uboot-rockchip-easepi-rk3568=y" >> .config
+fi
+
+echo "✅ U-Boot 包已切换到 uboot-rockchip (支持 RK3568)"
+
+# 复制设备树到 uboot-rockchip 源码目录 (uboot-rockchip 使用 arm64 路径)
+echo ">>> 复制设备树到 uboot-rockchip 源码..."
+DEVICE_TREE="rk3568-xiguapi-v3.dts"
+DTS_SOURCE="target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/${DEVICE_TREE}"
+DTS_TARGET_DIR="package/boot/uboot-rockchip/files/arch/arm64/boot/dts/rockchip/"
+
+if [ -f "${DTS_SOURCE}" ]; then
+    mkdir -p "${DTS_TARGET_DIR}"
+    cp -f "${DTS_SOURCE}" "${DTS_TARGET_DIR}"
+    echo "✅ 设备树已复制到 uboot-rockchip: ${DEVICE_TREE}"
+    ls -la "${DTS_TARGET_DIR}${DEVICE_TREE}"
 else
-    echo "⚠️  警告: 设备树文件不存在，将尝试其他路径..."
-    # 尝试从配置仓库查找
-    if [ -f "../rk35xx-24.10/target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/${DEVICE_TREE}" ]; then
-        mkdir -p package/boot/uboot-rk35xx/files/arch/arm64/boot/dts/rockchip/
-        cp -f ../rk35xx-24.10/target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/${DEVICE_TREE} \
-              package/boot/uboot-rk35xx/files/arch/arm64/boot/dts/rockchip/
-        echo "✅ U-Boot 设备树已复制 (从 rk35xx-24.10): ${DEVICE_TREE}"
-    else
-        echo "❌ 错误: 找不到设备树文件 ${DEVICE_TREE}，U-Boot 编译可能失败!"
-    fi
+    echo "❌ 错误: 设备树文件不存在: ${DTS_SOURCE}"
 fi
 
 echo "============================================"
 echo "✅ 编译配置完成!"
 echo "✅ 已添加: QModem + xgp-v3 屏幕驱动"
+echo "✅ 已修复: U-Boot (uboot-rk35xx -> uboot-rockchip)"
 echo "✅ 已修复: U-Boot 设备树"
 echo "============================================"
