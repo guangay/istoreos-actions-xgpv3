@@ -1,22 +1,28 @@
-name: Build iStoreOS 24.10 (RK3568)
+namname: Build iStore OS 24.10
 
 on:
+  repository_dispatch:
   workflow_dispatch:
     inputs:
       lan_ip:
-        description: 'LAN IP'
-        default: '192.168.10.1'
+        description: '设置LAN IP地址'
         required: true
+        default: '10.10.10.1'
       os_name:
-        description: '系统名称'
+        description: '设置系统名称'
+        required: true
         default: 'iStore OS'
-        required: true
       enable_wifi:
-        description: '启用 WiFi'
-        default: 'false'
+        description: '启用WiFi'
         required: true
+        default: false
+        type: boolean
+      ssh:
+        description: 'SSH connection to Actions'
+        required: false
+        default: 'false'
   schedule:
-    - cron: '0 16 * * *'
+   - cron: 0 16 * * *
 
 env:
   REPO_URL: https://github.com/istoreos/istoreos
