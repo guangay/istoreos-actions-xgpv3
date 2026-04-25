@@ -88,21 +88,17 @@ jobs:
           git clone --depth 1 $CONFIG_REPO config_temp
           cp -f config_temp/diy-part1.sh $GITHUB_WORKSPACE/
           cp -f config_temp/diy-part2.sh $GITHUB_WORKSPACE/
-          cp -f config_temp/configs/$DEVICE_TREE $GITHUB_WORKSPACE/ 2>/dev/null || true
-          cp -r config_temp/rk35xx-24.10/configs $GITHUB_WORKSPACE/ 2>/dev/null || true
-          cp -r config_temp/rk35xx-24.10/feeds.conf $GITHUB_WORKSPACE/ 2>/dev/null || true
-          cp -f config_temp/rk35xx-24.10/.config $GITHUB_WORKSPACE/ 2>/dev/null || true
-          rm -rf config_temp
-
-      - name: 克隆设备树
-        run: |
-          if [ -f "$GITHUB_WORKSPACE/$DEVICE_TREE" ]; then
+          cp -r config_temp/rk35xx-24.10 $GITHUB_WORKSPACE/ 2>/dev/null || true
+          # 复制设备树文件
+          if [ -f "config_temp/target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/$DEVICE_TREE" ]; then
             mkdir -p $GITHUB_WORKSPACE/openwrt/target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/
-            cp -f "$GITHUB_WORKSPACE/$DEVICE_TREE" $GITHUB_WORKSPACE/openwrt/target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/
+            cp -f config_temp/target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/$DEVICE_TREE \
+                  $GITHUB_WORKSPACE/openwrt/target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/
             echo ">>> 设备树 $DEVICE_TREE 已复制"
           else
             echo ">>> 警告: 设备树文件不存在"
           fi
+          rm -rf config_temp
 
       - name: 缓存构建动作
         uses: klever1988/cachewrtbuild@main
