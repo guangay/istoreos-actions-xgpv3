@@ -50,42 +50,12 @@ jobs:
           df -Th
 
       - name: 初始化编译环境
-        env:
-          DEBIAN_FRONTEND: noninteractive
         run: |
           # 清理冲突软件
           sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /etc/mysql /etc/php /usr/local/lib/android /opt/ghc
           sudo docker rmi `docker images -q` || true
           sudo docker image prune -a -f || true
 
-          # 更新软件源和升级
-          sudo -E apt-get -qq update
-          sudo -E apt-get -qq full-upgrade -y || true
-          sudo -E apt-get -qq clean
-
-          # 安装完整编译依赖
-          sudo -E apt-get -qq install -y \
-            ack antlr3 asciidoc autoconf automake autopoint binutils bison \
-            build-essential bzip2 ccache clang cmake cpio curl \
-            device-tree-compiler flex gawk gcc-multilib g++-multilib gettext \
-            genisoimage git gperf haveged help2man intltool \
-            libc6-dev-i386 libelf-dev libfuse-dev libglib2.0-dev \
-            libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev \
-            libncurses5-dev libncursesw5-dev libpython3-dev \
-            libreadline-dev libssl-dev libtool llvm lrzsz \
-            libnsl-dev ninja-build p7zip p7zip-full patch pkgconf \
-            python3 python3-pyelftools python3-setuptools \
-            qemu-utils rsync scons squashfs-tools subversion \
-            swig texinfo uglifyjs upx-ucl unzip vim wget xmlto xxd zlib1g-dev
-
-          pip3 install --user pyelftools pysocks unidecode requests || true
-
-          # 清理不需要的软件
-          sudo -E apt-get -y purge azure-cli ghc* zulu* hhvm llvm* firefox google* dotnet* \
-            powershell openjdk* adoptopenjdk* mysql* php* mongodb* moby* snapd* android* || true
-          sudo -E apt-get -qq autoremove --purge
-
-          sudo timedatectl set-timezone "$TZ"
           sudo mkdir -p /workdir
           sudo chown $USER:$GROUPS /workdir
 
@@ -96,8 +66,10 @@ jobs:
           ls -la user-repo/
 
       - name: 克隆源码
-        working-directory: /workdir
         run: |
+          sudo mkdir -p /workdir
+          sudo chown $USER:$GROUPS /workdir
+          cd /workdir
           df -hT $PWD
           git clone $REPO_URL -b $REPO_BRANCH openwrt
           ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
@@ -191,14 +163,21 @@ jobs:
             echo "CONFIG_PACKAGE_uboot-rockchip=y" >> .config
           fi
 
-          # 启用 easepi-rk3568 variant
-          if grep -q "^# CONFIG_PACKAGE_uboot-rockchip-easepi-rk3568 is not set" .config 2>/dev/null; then
-            sed -i 's/^# CONFIG_PACKAGE_uboot-rockchip-easepi-rk3568 is not set/CONFIG_PACKAGE_uboot-rockchip-easepi-rk3568=y/' .config
-          elif ! grep -q "^CONFIG_PACKAGE_uboot-rockchip-easepi-rk3568=y" .config 2>/dev/null; then
-            echo "CONFIG_PACKAGE_uboot-rockchip-easepi-rk3568=y" >> .config
-          fi
+          # 确保使用 uboot-rockchip 通用配置（不启用特定variant）
+          # 注意：xgp-v3 设备树通过 uboot-rockchip 的 files 目录注入
 
           echo "✅ U-Boot 配置已修复"
+
+          # 修复设备配置 (nlnet_xiguapi-v3 不存在)
+          sed -i 's/^CONFIG_TARGET_DEVICE_rockchip_armv8_DEVICE_nlnet_xiguapi-v3=y$/# CONFIG_TARGET_DEVICE_rockchip_armv8_DEVICE_nlnet_xiguapi-v3 is not set/' .config
+          echo "# CONFIG_TARGET_DEVICE_rockchip_armv8_DEVICE_nlnet_xiguapi-v3 is not set" >> .config
+          echo "CONFIG_TARGET_DEVICE_rockchip_armv8_DEVICE_easepi_r1=y" >> .config
+
+          # 禁用所有 uboot-rockchip 的 variant
+          sed -i '/^CONFIG_PACKAGE_uboot-rockchip-/s/^/# /' .config
+          echo "# 禁用所有 uboot-rockchip variant，只保留核心包" >> .config
+
+          echo "✅ 设备配置已修复 (使用 easepi_r1 作为基础)"
 
           # 复制设备树文件
           echo "=== 复制设备树文件 ==="
