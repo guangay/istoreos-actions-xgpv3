@@ -142,7 +142,7 @@ jobs:
           if [ ! -f .config ]; then
             echo "❌ 错误: .config 文件不存在!"
             ls -la
-            ls -la rk35xx-24.10/ 2>/dev/null || echo "rk35xx-24.10 目录不存在"
+            ls -la ../rk35xx-24.10/ 2>/dev/null || echo "rk35xx-24.10 目录不存在"
             exit 1
           fi
           echo "✅ .config 存在 ($(wc -l < .config) 行)"
