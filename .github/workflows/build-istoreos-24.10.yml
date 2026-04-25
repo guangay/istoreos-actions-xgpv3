@@ -185,5 +185,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: istoreos-$DEVICE_NAME-$FILE_DATE
-          path: $FIRMWARE
+          path: openwrt/bin/targets/*/*/
           retention-days: 30
