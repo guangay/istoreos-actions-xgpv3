@@ -1,0 +1,182 @@
+name: Build iStoreOS 24.10 (RK3568)
+
+on:
+  workflow_dispatch:
+    inputs:
+      lan_ip:
+        description: 'LAN IP'
+        default: '192.168.10.1'
+        required: true
+      os_name:
+        description: '系统名称'
+        default: 'iStore OS'
+        required: true
+      enable_wifi:
+        description: '启用 WiFi'
+        default: 'false'
+        required: true
+  schedule:
+    - cron: '0 16 * * *'
+
+env:
+  REPO_URL: https://github.com/istoreos/istoreos
+  REPO_BRANCH: istoreos-24.10
+  ARCHITECTURE: rk35xx-24.10
+  DEVICE_NAME: nlnet_xiguapi-v3
+  CONFIG_REPO: https://github.com/guangay/istoreos-actions-xgpv3.git
+  FEEDS_CONF: feeds.conf
+  CONFIG_FILE: .config
+  DIY_P1_SH: diy-part1.sh
+  DIY_P2_SH: diy-part2.sh
+  UPLOAD_BIN_DIR: false
+  UPLOAD_FIRMWARE: true
+  UPLOAD_RELEASE: false
+  TZ: Asia/Shanghai
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 600
+
+    steps:
+      - name: 准备完成
+        uses: actions/checkout@v4
+
+      - name: 检查服务器配置
+        run: |
+          echo "若分配的服务器性能不足，务必及时取消，重新运行！"
+          echo "------------------------------- CPU信息 -------------------------------"
+          echo "CPU物理数量:$(cat /proc/cpuinfo| grep 'physical id'| sort| uniq| wc -l)"
+          echo "CPU核心及版本信息: $(cat /proc/cpuinfo | grep name | cut -f2 -d: | uniq -c)"
+          echo "------------------------------- 内存信息 -------------------------------"
+          echo "已安装内存详细信息:"
+          sudo lshw -short -C memory | grep GiB
+          echo "------------------------------- 磁盘信息 -------------------------------"
+          df -Th
+
+      - name: 初始化编译环境
+        env:
+          DEBIAN_FRONTEND: noninteractive
+        run: |
+          echo "------------------------------- 更新并安装依赖 -------------------------------"
+          sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /etc/mysql /etc/php /usr/local/lib/android /opt/ghc
+          sudo -E apt-get -qq update
+          sudo -E apt-get -qq install $(cat $GITHUB_WORKSPACE/depends/ubuntu.txt)
+          wget https://bootstrap.pypa.io/pip/3.6/get-pip.py
+          sudo python3 get-pip.py
+          sudo rm -rf get-pip.py
+          sudo pip install pyelftools
+          echo "------------------------------- 清理Docker镜像和软件 -------------------------------"
+          docker rmi `docker images -q` || true
+          docker image prune -a -f || true
+          sudo -E apt-get -y purge azure-cli ghc* zulu* hhvm llvm* firefox google* dotnet* powershell openjdk* adoptopenjdk* mysql* php* mongodb* dotnet* moby* snapd* android* || true
+          sudo -E apt-get -qq autoremove --purge
+          sudo -E apt-get -qq clean
+          echo "------------------------------- 设置工作目录及时区 -------------------------------"
+          sudo timedatectl set-timezone "$TZ"
+          sudo mkdir -p /workdir
+          sudo chown $USER:$GROUPS /workdir
+
+      - name: 克隆源码
+        working-directory: /workdir
+        run: |
+          df -hT $PWD
+          git clone $REPO_URL -b ${{ env.REPO_BRANCH }} openwrt
+          ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
+
+      - name: 克隆配置仓库
+        run: |
+          rm -rf config_temp
+          git clone --depth 1 ${{ env.CONFIG_REPO }} config_temp
+          cp -f config_temp/diy-part1.sh $GITHUB_WORKSPACE/
+          cp -f config_temp/diy-part2.sh $GITHUB_WORKSPACE/
+          cp -r config_temp/rk35xx-24.10/configs $GITHUB_WORKSPACE/ 2>/dev/null || true
+          cp -r config_temp/rk35xx-24.10/feeds.conf $GITHUB_WORKSPACE/ 2>/dev/null || true
+          rm -rf config_temp
+
+      - name: 缓存构建动作
+        uses: klever1988/cachewrtbuild@main
+        with:
+          ccache: 'true'
+          mix-key: ${{ env.ARCHITECTURE }}-${{ env.REPO_BRANCH }}
+          prefix: ${{ github.workspace }}/openwrt
+
+      - name: 加载自定义 feeds
+        env:
+          FEEDS_CONF_PATH: ${{ env.ARCHITECTURE }}/${{ env.FEEDS_CONF }}
+        run: |
+          [ -e $FEEDS_CONF_PATH ] && mv $FEEDS_CONF_PATH openwrt/$FEEDS_CONF
+          chmod +x ${{ env.DIY_P1_SH }}
+          cd openwrt
+          $GITHUB_WORKSPACE/${{ env.DIY_P1_SH }}
+
+      - name: 更新 feeds
+        run: cd openwrt && ./scripts/feeds update -a
+
+      - name: 安装 feeds
+        run: cd openwrt && ./scripts/feeds install -a
+
+      - name: 加载自定义配置
+        env:
+          CONFIG_FILE_PATH: ${{ env.ARCHITECTURE }}/${{ env.CONFIG_FILE }}
+        run: |
+          [ -e files ] && mv files openwrt/files
+          [ -e $CONFIG_FILE_PATH ] && mv $CONFIG_FILE_PATH openwrt/$CONFIG_FILE
+          chmod +x ${{ env.DIY_P2_SH }}
+          cd openwrt
+          $GITHUB_WORKSPACE/${{ env.DIY_P2_SH }}
+
+      - name: 设置 LAN IP 地址
+        run: |
+          cd openwrt
+          sed -i "s/192.168.100.1/${{ inputs.lan_ip }}/g" package/base-files/files/bin/config_generate
+
+      - name: 设置系统名称
+        run: |
+          cd openwrt
+          sed -i "s/iStore OS/${{ inputs.os_name }}/g" package/base-files/files/bin/config_generate
+
+      - name: 启用 WiFi
+        if: inputs.enable_wifi == 'true'
+        run: |
+          cd openwrt
+          echo "CONFIG_PACKAGE_kmod-mt7915e=y" >> .config
+          echo "CONFIG_PACKAGE_kmod-mt7603e=y" >> .config
+
+      - name: 下载软件包
+        id: package
+        run: |
+          cd openwrt
+          make defconfig
+          make download -j8
+          find dl -size -1024c -exec ls -l {} \;
+          find dl -size -1024c -exec rm -f {} \;
+
+      - name: 编译固件
+        id: compile
+        run: |
+          cd openwrt
+          echo "使用 $(nproc) 线程编译"
+          make -j$(nproc) || make -j1 || make -j1 V=s
+          echo "FILE_DATE=_$(date +'%Y%m%d%H%M')" >> $GITHUB_ENV
+          echo "STATUS=success" >> $GITHUB_ENV
+
+      - name: 检查磁盘空间
+        if: success() || failure()
+        run: df -hT
+
+      - name: 整理固件文件
+        id: organize
+        if: env.STATUS == 'success'
+        run: |
+          cd openwrt/bin/targets/*/*
+          rm -rf packages
+          echo "FIRMWARE=$PWD" >> $GITHUB_ENV
+
+      - name: 上传固件
+        if: env.STATUS == 'success'
+        uses: actions/upload-artifact@v4
+        with:
+          name: istoreos-${{ env.DEVICE_NAME }}-${{ env.FILE_DATE }}
+          path: ${{ env.FIRMWARE }}
+          retention-days: 30
