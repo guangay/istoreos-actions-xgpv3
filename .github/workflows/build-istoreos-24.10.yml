@@ -156,5 +156,5 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: OpenWrt_firmware_${{ env.ARCHITECTURE }}_$(date +'%Y%m%d%H%M')
-          path: ${{ env.FIRMWARE }}
+          path: openwrt/bin/targets/*/*/
           retention-days: 7
