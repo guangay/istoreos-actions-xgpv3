@@ -90,11 +90,11 @@ CONFIG_PACKAGE_procps-ng-ps=y
 " >> .config
 
 # 复制 xgpv3 设备树（如果存在）
-if [ -f "$GITHUB_WORKSPACE/configs/rk3568-xiguapi-v3.dts" ]; then
-    mkdir -p target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/
-    cp -f "$GITHUB_WORKSPACE/configs/rk3568-xiguapi-v3.dts" \
-        target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/
-fi
+#if [ -f "$GITHUB_WORKSPACE/configs/rk3568-xiguapi-v3.dts" ]; then
+#    mkdir -p target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/
+#   cp -f "$GITHUB_WORKSPACE/configs/rk3568-xiguapi-v3.dts" \
+#      target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/
+#fi
 
 echo "============================================"
 echo "✅ 编译配置完成!"
