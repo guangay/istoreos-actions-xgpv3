@@ -19,7 +19,7 @@ on:
     - cron: '0 16 * * *'
 
 env:
-  REPO_URL: https://github.com/guangay/istoreos
+  REPO_URL: https://github.com/istoreos/istoreos
   REPO_BRANCH: istoreos-24.10
   DEVICE_NAME: nlnet_xiguapi-v3
   DEVICE_TREE: rk3568-xiguapi-v3.dts
