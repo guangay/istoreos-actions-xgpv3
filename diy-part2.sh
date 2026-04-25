@@ -89,14 +89,33 @@ CONFIG_PACKAGE_procps-ng=y
 CONFIG_PACKAGE_procps-ng-ps=y
 " >> .config
 
-# 复制 xgpv3 设备树（如果存在）
-#if [ -f "$GITHUB_WORKSPACE/configs/rk3568-xiguapi-v3.dts" ]; then
-#    mkdir -p target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/
-#   cp -f "$GITHUB_WORKSPACE/configs/rk3568-xiguapi-v3.dts" \
-#      target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/
-#fi
+# =====================================================
+# 修复 U-Boot 设备树 (解决编译错误)
+# =====================================================
+echo ">>> 修复 U-Boot 设备树..."
+DEVICE_TREE="rk3568-xiguapi-v3.dts"
+
+if [ -f "target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/${DEVICE_TREE}" ]; then
+    mkdir -p package/boot/uboot-rk35xx/files/arch/arm64/boot/dts/rockchip/
+    cp -f target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/${DEVICE_TREE} \
+          package/boot/uboot-rk35xx/files/arch/arm64/boot/dts/rockchip/
+    echo "✅ U-Boot 设备树已复制: ${DEVICE_TREE}"
+    ls -la package/boot/uboot-rk35xx/files/arch/arm64/boot/dts/rockchip/${DEVICE_TREE}
+else
+    echo "⚠️  警告: 设备树文件不存在，将尝试其他路径..."
+    # 尝试从配置仓库查找
+    if [ -f "../rk35xx-24.10/target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/${DEVICE_TREE}" ]; then
+        mkdir -p package/boot/uboot-rk35xx/files/arch/arm64/boot/dts/rockchip/
+        cp -f ../rk35xx-24.10/target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/${DEVICE_TREE} \
+              package/boot/uboot-rk35xx/files/arch/arm64/boot/dts/rockchip/
+        echo "✅ U-Boot 设备树已复制 (从 rk35xx-24.10): ${DEVICE_TREE}"
+    else
+        echo "❌ 错误: 找不到设备树文件 ${DEVICE_TREE}，U-Boot 编译可能失败!"
+    fi
+fi
 
 echo "============================================"
 echo "✅ 编译配置完成!"
 echo "✅ 已添加: QModem + xgp-v3 屏幕驱动"
+echo "✅ 已修复: U-Boot 设备树"
 echo "============================================"
