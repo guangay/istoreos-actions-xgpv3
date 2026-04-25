@@ -44,6 +44,20 @@ echo "CONFIG_PACKAGE_luci-app-oled=n" >> .config
 echo "✅ 已禁用 lcdsimple 和 luci-app-oled"
 
 # =====================================================
+# 禁用 linkease_nas feed 中有问题的包
+# =====================================================
+echo ">>> 禁用 linkease_nas 中有问题的包..."
+
+# 禁用 webdav2 (依赖问题，编译失败)
+sed -i 's/CONFIG_PACKAGE_webdav2=y/# CONFIG_PACKAGE_webdav2 is not set/' .config
+if ! grep -q "^# CONFIG_PACKAGE_webdav2 is not set" .config; then
+    echo "# CONFIG_PACKAGE_webdav2 is not set" >> .config
+fi
+echo "CONFIG_PACKAGE_webdav2=n" >> .config
+
+echo "✅ 已禁用 webdav2"
+
+# =====================================================
 # xgp-v3 追加配置
 # =====================================================
 
@@ -116,9 +130,38 @@ echo "# CONFIG_PACKAGE_uboot-rockchip-easepi-rk3568 is not set" >> .config
 echo "CONFIG_PACKAGE_uboot-rockchip-easepi-rk3568=n" >> .config
 
 echo "✅ U-Boot 使用 xgp-v3 专用设备树 (已禁用 easepi-rk3568)"
+
+# =====================================================
+# 复制 xgp-v3 设备树文件
+# =====================================================
+echo ">>> 复制 xgp-v3 设备树文件..."
+
+# 创建设备树目录
+mkdir -p target/linux/rockchip/files/arch/arm64/boot/dts/rockchip
+
+# 复制设备树文件 (如果有的话)
+if [ -f "files/arch/arm64/boot/dts/rockchip/rk3568-xiguapi-v3.dts" ]; then
+    cp files/arch/arm64/boot/dts/rockchip/rk3568-xiguapi-v3.dts \
+       target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/
+    echo "✅ 已复制 rk3568-xiguapi-v3.dts"
+elif [ -f "../files/arch/arm64/boot/dts/rockchip/rk3568-xiguapi-v3.dts" ]; then
+    cp ../files/arch/arm64/boot/dts/rockchip/rk3568-xiguapi-v3.dts \
+       target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/
+    echo "✅ 已复制 rk3568-xiguapi-v3.dts (从上级目录)"
+else
+    echo "⚠️ 未找到 rk3568-xiguapi-v3.dts，请确保文件存在于 files/ 目录"
+fi
+
+# 验证设备树文件
+if [ -f "target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/rk3568-xiguapi-v3.dts" ]; then
+    echo "✅ 设备树文件已就位"
+else
+    echo "❌ 设备树文件不存在!"
+fi
 echo "============================================"
 echo "✅ 编译配置完成!"
 echo "✅ 已添加: QModem + xgp-v3 屏幕驱动"
-echo "✅ 已禁用: lcdsimple + luci-app-oled + easepi-rk3568"
+echo "✅ 已禁用: lcdsimple + luci-app-oled + easepi-rk3568 + webdav2"
 echo "✅ 已修复: U-Boot (uboot-rk35xx -> uboot-rockchip)"
+echo "✅ 已复制: xgp-v3 设备树文件"
 echo "============================================"
