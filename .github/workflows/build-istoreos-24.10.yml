@@ -197,8 +197,8 @@ jobs:
 
           # 复制设备树到 uboot-rockchip
           echo "=== 复制设备树文件 ==="
-          # 从用户仓库目录复制设备树
-          DTS_SOURCE="../user-repo/target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/${DEVICE_TREE}"
+          # 从用户仓库目录复制设备树 (使用绝对路径)
+          DTS_SOURCE="${GITHUB_WORKSPACE}/user-repo/target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/${DEVICE_TREE}"
 
           # 检查设备树是否存在
           if [ -f "$DTS_SOURCE" ]; then
@@ -216,8 +216,8 @@ jobs:
           else
             echo "⚠️ 警告: 设备树文件不存在: ${DTS_SOURCE}"
             echo ">>> 搜索设备树文件..."
-            find ../user-repo -name "*.dts" -path "*rockchip*" 2>/dev/null | head -10 || echo "没有找到 rockchip 设备树"
-            ls -la ../user-repo/target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/ 2>/dev/null || echo "设备树目录不存在"
+            find ${GITHUB_WORKSPACE}/user-repo -name "*.dts" -path "*rockchip*" 2>/dev/null | head -10 || echo "没有找到 rockchip 设备树"
+            ls -la ${GITHUB_WORKSPACE}/user-repo/target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/ 2>/dev/null || echo "设备树目录不存在"
           fi
 
           # 下载软件包
