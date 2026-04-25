@@ -83,7 +83,7 @@ jobs:
         uses: klever1988/cachewrtbuild@main
         with:
           ccache: 'true'
-          mix-key: ${{ env.ARCHITECTURE }}
+          mixkey: ${{ env.ARCHITECTURE }}
           prefix: ${{ github.workspace }}/openwrt
 
       - name: 加载自定义 feeds
