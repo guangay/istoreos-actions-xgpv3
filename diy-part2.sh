@@ -44,18 +44,19 @@ echo "CONFIG_PACKAGE_luci-app-oled=n" >> .config
 echo "✅ 已禁用 lcdsimple 和 luci-app-oled"
 
 # =====================================================
-# 禁用 linkease_nas feed 中有问题的包
+# 禁用 linkease_nas feed 中的 webdav2 (编译失败)
 # =====================================================
-echo ">>> 禁用 linkease_nas 中有问题的包..."
+echo ">>> 删除 linkease_nas 中的 webdav2..."
 
-# 禁用 webdav2 (依赖问题，编译失败)
-sed -i 's/CONFIG_PACKAGE_webdav2=y/# CONFIG_PACKAGE_webdav2 is not set/' .config
-if ! grep -q "^# CONFIG_PACKAGE_webdav2 is not set" .config; then
-    echo "# CONFIG_PACKAGE_webdav2 is not set" >> .config
-fi
+# 删除 webdav2 源码目录
+rm -rf feeds/linkease_nas/network/services/webdav2 2>/dev/null || true
+
+# 确保 .config 中禁用
+sed -i '/CONFIG_PACKAGE.*webdav2/d' .config
+grep -q "^# CONFIG_PACKAGE_webdav2" .config || echo "# CONFIG_PACKAGE_webdav2 is not set" >> .config
 echo "CONFIG_PACKAGE_webdav2=n" >> .config
 
-echo "✅ 已禁用 webdav2"
+echo "✅ 已删除 webdav2 源码"
 
 # =====================================================
 # 复制 xgp-v3 设备树文件 (给内核用)
