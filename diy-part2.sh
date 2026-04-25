@@ -97,8 +97,11 @@ CONFIG_PACKAGE_procps-ng-ps=y
 # 解决: 切换到 uboot-rockchip 包，它支持 RK3568
 echo ">>> 修复 U-Boot 包配置 (RK3568 -> uboot-rockchip)..."
 
-# 禁用 uboot-rk35xx (不支持 RK3568)
+# 强制禁用 uboot-rk35xx 及其所有 variant (不支持 RK3568)
 sed -i 's/CONFIG_PACKAGE_uboot-rk35xx=y/# CONFIG_PACKAGE_uboot-rk35xx is not set/' .config
+sed -i 's/CONFIG_PACKAGE_uboot-rk35xx-/CONFIG_UBOOT_RK35XX_/' .config
+echo '# 强制禁用 uboot-rk35xx' >> .config
+echo 'CONFIG_PACKAGE_uboot-rk35xx=n' >> .config
 
 # 启用 uboot-rockchip (支持 RK3568)
 if grep -q "^# CONFIG_PACKAGE_uboot-rockchip is not set" .config 2>/dev/null; then
@@ -128,7 +131,8 @@ if [ -f "${DTS_SOURCE}" ]; then
     echo "✅ 设备树已复制到 uboot-rockchip: ${DEVICE_TREE}"
     ls -la "${DTS_TARGET_DIR}${DEVICE_TREE}"
 else
-    echo "❌ 错误: 设备树文件不存在: ${DTS_SOURCE}"
+    echo "❌ 警告: 设备树文件不存在: ${DTS_SOURCE}"
+    echo ">>> U-Boot 将使用内置设备树继续编译..."
 fi
 
 echo "============================================"
