@@ -90,13 +90,17 @@ jobs:
           cp -f config_temp/diy-part2.sh $GITHUB_WORKSPACE/
           cp -r config_temp/rk35xx-24.10 $GITHUB_WORKSPACE/ 2>/dev/null || true
           # 复制设备树文件
+          echo ">>> 开始复制设备树..."
+          echo ">>> 源路径: config_temp/target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/$DEVICE_TREE"
           if [ -f "config_temp/target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/$DEVICE_TREE" ]; then
             mkdir -p $GITHUB_WORKSPACE/openwrt/target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/
             cp -f config_temp/target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/$DEVICE_TREE \
                   $GITHUB_WORKSPACE/openwrt/target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/
-            echo ">>> 设备树 $DEVICE_TREE 已复制"
+            echo "✅ 设备树 $DEVICE_TREE 复制成功!"
+            ls -la $GITHUB_WORKSPACE/openwrt/target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/$DEVICE_TREE
           else
-            echo ">>> 警告: 设备树文件不存在"
+            echo "❌ 错误: 设备树文件不存在!"
+            ls -la config_temp/target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/ 2>/dev/null || echo "目录不存在或为空"
           fi
           rm -rf config_temp
 
