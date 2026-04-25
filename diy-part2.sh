@@ -10,40 +10,38 @@
 # Description: OpenWrt DIY script part 2 (After Update feeds)
 #
 
-# 修改openwrt登陆地址,把下面的 192.168.10.1 修改成你想要的就可以了
-# sed -i 's/192.168.100.1/192.168.10.1/g' package/base-files/files/bin/config_generate
-
-# 修改主机名字，把 iStore OS 修改你喜欢的就行（不能纯数字或者使用中文）
-# sed -i 's/OpenWrt/iStore OS/g' package/base-files/files/bin/config_generate
-
-# ttyd 自动登录
-# sed -i "s?/bin/login?/usr/libexec/login.sh?g" ${GITHUB_WORKSPACE}/openwrt/package/feeds/packages/ttyd/files/ttyd.config
-
 # =====================================================
-# xgp-v3 设备专用配置
+# 移除不需要的组件
 # =====================================================
 
 # 移除 ddnsto（可选）
-sed -i 's/CONFIG_PACKAGE_ddnsto=y/CONFIG_PACKAGE_ddnsto=n/' .config
-sed -i 's/CONFIG_PACKAGE_luci-app-ddnsto=y/CONFIG_PACKAGE_luci-app-ddnsto=n/' .config
-sed -i 's/CONFIG_PACKAGE_luci-i18n-ddnsto-zh-cn=y/CONFIG_PACKAGE_luci-i18n-ddnsto-zh-cn=n/' .config
+sed -i 's/CONFIG_PACKAGE_ddnsto=y/# CONFIG_PACKAGE_ddnsto is not set/' .config
+sed -i 's/CONFIG_PACKAGE_luci-app-ddnsto=y/# CONFIG_PACKAGE_luci-app-ddnsto is not set/' .config
+sed -i 's/CONFIG_PACKAGE_luci-i18n-ddnsto-zh-cn=y/# CONFIG_PACKAGE_luci-i18n-ddnsto-zh-cn is not set/' .config
 
 # 移除 bootstrap 主题
-sed -i 's/CONFIG_PACKAGE_luci-theme-bootstrap=y/CONFIG_PACKAGE_luci-theme-bootstrap=n/' .config
+sed -i 's/CONFIG_PACKAGE_luci-theme-bootstrap=y/# CONFIG_PACKAGE_luci-theme-bootstrap is not set/' .config
 
 # =====================================================
-# 添加 xgp-v3 屏幕驱动 (已在 workflow 中单独克隆)
-# 注意: xgp-v3-screen 是独立包，不是 feeds 源，无需通过 feeds 安装
+# 禁用 LCD/OLED 屏幕应用（使用 xgp-v3-screen 专用驱动）
 # =====================================================
-# echo ">>> 安装 xgp-v3 屏幕驱动..."
-# 已由 workflow step '克隆 xgp_screen 屏幕驱动' 单独处理
+echo ">>> 禁用 lcdsimple 和 luci-app-oled..."
 
-# =====================================================
-# 添加 QModem 5G模组管理 (已在 workflow 中单独处理)
-# 注意: modem_feeds 是独立包，不是 feeds 源
-# =====================================================
-# echo ">>> 安装 QModem 5G模组管理..."
-# 已由 feeds install -a -p modem 在加载 feeds 时处理
+# 禁用 lcdsimple
+sed -i 's/CONFIG_PACKAGE_lcdsimple=y/# CONFIG_PACKAGE_lcdsimple is not set/' .config
+if ! grep -q "^# CONFIG_PACKAGE_lcdsimple is not set" .config; then
+    echo "# CONFIG_PACKAGE_lcdsimple is not set" >> .config
+fi
+echo "CONFIG_PACKAGE_lcdsimple=n" >> .config
+
+# 禁用 luci-app-oled
+sed -i 's/CONFIG_PACKAGE_luci-app-oled=y/# CONFIG_PACKAGE_luci-app-oled is not set/' .config
+if ! grep -q "^# CONFIG_PACKAGE_luci-app-oled is not set" .config; then
+    echo "# CONFIG_PACKAGE_luci-app-oled is not set" >> .config
+fi
+echo "CONFIG_PACKAGE_luci-app-oled=n" >> .config
+
+echo "✅ 已禁用 lcdsimple 和 luci-app-oled"
 
 # =====================================================
 # xgp-v3 追加配置
@@ -99,7 +97,7 @@ echo ">>> 修复 U-Boot 包配置 (RK3568 -> uboot-rockchip)..."
 
 # 强制禁用 uboot-rk35xx 及其所有 variant (不支持 RK3568)
 sed -i 's/CONFIG_PACKAGE_uboot-rk35xx=y/# CONFIG_PACKAGE_uboot-rk35xx is not set/' .config
-sed -i 's/CONFIG_PACKAGE_uboot-rk35xx-/CONFIG_UBOOT_RK35XX_/' .config
+sed -i 's/CONFIG_PACKAGE_uboot-rk35xx-/# CONFIG_PACKAGE_uboot-rk35xx-/' .config
 echo '# 强制禁用 uboot-rk35xx' >> .config
 echo 'CONFIG_PACKAGE_uboot-rk35xx=n' >> .config
 
@@ -131,13 +129,14 @@ if [ -f "${DTS_SOURCE}" ]; then
     echo "✅ 设备树已复制到 uboot-rockchip: ${DEVICE_TREE}"
     ls -la "${DTS_TARGET_DIR}${DEVICE_TREE}"
 else
-    echo "❌ 警告: 设备树文件不存在: ${DTS_SOURCE}"
+    echo "⚠️ 警告: 设备树文件不存在: ${DTS_SOURCE}"
     echo ">>> U-Boot 将使用内置设备树继续编译..."
 fi
 
 echo "============================================"
 echo "✅ 编译配置完成!"
 echo "✅ 已添加: QModem + xgp-v3 屏幕驱动"
+echo "✅ 已禁用: lcdsimple + luci-app-oled"
 echo "✅ 已修复: U-Boot (uboot-rk35xx -> uboot-rockchip)"
 echo "✅ 已修复: U-Boot 设备树"
 echo "============================================"
