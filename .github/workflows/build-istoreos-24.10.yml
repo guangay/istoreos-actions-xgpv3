@@ -87,8 +87,8 @@ jobs:
         run: |
           # 使用 rk35xx-24.10/feeds.conf
           cp rk35xx-24.10/feeds.conf openwrt/feeds.conf.default
-          # 修复: defaults 与 OpenWrt 内置冲突，改名为 openwrt_feeds
-          sed -i 's/src-include defaults feeds.conf.default/src-include openwrt_feeds feeds.conf.default/' openwrt/feeds.conf.default
+          # 修复: 删除自我引用的 src-include 行（会导致重复定义）
+          sed -i '/src-include.*feeds.conf.default/d' openwrt/feeds.conf.default
           chmod +x $DIY_P1_SH
           cd openwrt
           $GITHUB_WORKSPACE/$DIY_P1_SH || true
