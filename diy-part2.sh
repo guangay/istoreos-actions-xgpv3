@@ -116,28 +116,9 @@ echo "# CONFIG_PACKAGE_uboot-rockchip-easepi-rk3568 is not set" >> .config
 echo "CONFIG_PACKAGE_uboot-rockchip-easepi-rk3568=n" >> .config
 
 echo "✅ U-Boot 使用 xgp-v3 专用设备树 (已禁用 easepi-rk3568)"
-
-# 复制设备树到 uboot-rockchip 源码目录 (uboot-rockchip 使用 arm64 路径)
-echo ">>> 复制设备树到 uboot-rockchip 源码..."
-DEVICE_TREE="rk3568-xiguapi-v3.dts"
-# 从 openwrt 目录返回上级，查找用户仓库中的设备树文件
-DTS_SOURCE="../target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/${DEVICE_TREE}"
-DTS_TARGET_DIR="package/boot/uboot-rockchip/files/arch/arm64/boot/dts/rockchip/"
-
-if [ -f "${DTS_SOURCE}" ]; then
-    mkdir -p "${DTS_TARGET_DIR}"
-    cp -f "${DTS_SOURCE}" "${DTS_TARGET_DIR}"
-    echo "✅ 设备树已复制到 uboot-rockchip: ${DEVICE_TREE}"
-    ls -la "${DTS_TARGET_DIR}${DEVICE_TREE}"
-else
-    echo "⚠️ 警告: 设备树文件不存在: ${DTS_SOURCE}"
-    echo ">>> U-Boot 将使用内置设备树继续编译..."
-fi
-
 echo "============================================"
 echo "✅ 编译配置完成!"
 echo "✅ 已添加: QModem + xgp-v3 屏幕驱动"
 echo "✅ 已禁用: lcdsimple + luci-app-oled + easepi-rk3568"
 echo "✅ 已修复: U-Boot (uboot-rk35xx -> uboot-rockchip)"
-echo "✅ 设备树: 使用 xgp-v3 专用 rk3568-xiguapi-v3.dts"
 echo "============================================"
