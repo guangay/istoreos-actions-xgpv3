@@ -44,21 +44,6 @@ echo "CONFIG_PACKAGE_luci-app-oled=n" >> .config
 echo "✅ 已禁用 lcdsimple 和 luci-app-oled"
 
 # =====================================================
-# 禁用 linkease_nas feed 中的 webdav2 (编译失败)
-# =====================================================
-echo ">>> 删除 linkease_nas 中的 webdav2..."
-
-# 删除 webdav2 源码目录
-rm -rf feeds/linkease_nas/network/services/webdav2 2>/dev/null || true
-
-# 确保 .config 中禁用
-sed -i '/CONFIG_PACKAGE.*webdav2/d' .config
-grep -q "^# CONFIG_PACKAGE_webdav2" .config || echo "# CONFIG_PACKAGE_webdav2 is not set" >> .config
-echo "CONFIG_PACKAGE_webdav2=n" >> .config
-
-echo "✅ 已删除 webdav2 源码"
-
-# =====================================================
 # 复制 xgp-v3 设备树文件 (给内核用)
 # =====================================================
 echo ">>> 复制 xgp-v3 设备树文件..."
@@ -147,6 +132,6 @@ echo "✅ U-Boot 使用 xgp-v3 专用设备树 (已禁用 easepi-rk3568)"
 echo "============================================"
 echo "✅ 编译配置完成!"
 echo "✅ 已添加: QModem + xgp-v3 屏幕驱动"
-echo "✅ 已禁用: lcdsimple + luci-app-oled + easepi-rk3568 + webdav2"
+echo "✅ 已禁用: lcdsimple + luci-app-oled + easepi-rk3568"
 echo "✅ 已修复: U-Boot (uboot-rk35xx -> uboot-rockchip)"
 echo "============================================"
