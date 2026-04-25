@@ -192,7 +192,7 @@ jobs:
           # 复制设备树到 uboot-rockchip
           echo "=== 复制设备树文件 ==="
           # 设备树在用户仓库中，需要从 openwrt/ 返回上级目录查找
-          DTS_SOURCE="../target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/${DEVICE_TREE}"
+          DTS_SOURCE="/target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/${DEVICE_TREE}"
 
           # 检查设备树是否存在
           if [ -f "$DTS_SOURCE" ]; then
