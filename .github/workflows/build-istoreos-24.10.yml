@@ -57,8 +57,7 @@ jobs:
           sudo -E apt-get -qq update
           sudo -E apt-get -qq install -y build-essential clang flex g++ gawk gcc-multilib gettext \
             git libncurses5-dev libssl-dev rsync unzip zlib1g-dev swig libpython3-dev \
-            python3 python3-pip python3-venv python3-dev aria2 jq subversion qemu-utils \
-            ccache rename libelf-dev libgmp-dev libmpc-dev libmpfr-dev
+            python3 python3-pip python3-venv python3-dev aria2 jq subversion ccache rename libelf-dev libgmp-dev libmpc-dev libmpfr-dev
           pip3 install --user pyelftools pysocks unidecode requests || true
           sudo docker rmi `docker images -q` || true
           sudo docker image prune -a -f || true
@@ -130,48 +129,67 @@ jobs:
           echo "CONFIG_PACKAGE_kmod-mt7915e=y" >> .config
           echo "CONFIG_PACKAGE_kmod-mt7603e=y" >> .config
 
-      - name: 下载软件包
+      - name: 下载软件包并修复 U-Boot
         id: package
         run: |
           cd openwrt
           make defconfig
 
           # =====================================================
-          # 关键修复: 在 make defconfig 之后再次禁用 uboot-rk35xx
-          # 因为 make defconfig 会根据设备 profile 重新选中它
+          # 彻底禁用 uboot-rk35xx (不支持 RK3568)
           # =====================================================
-          echo ">>> 修复 U-Boot 配置 (make defconfig 之后)..."
+          echo "=== U-Boot 配置修复 ==="
 
-          # 禁用 uboot-rk35xx (不支持 RK3568)
-          sed -i 's/CONFIG_PACKAGE_uboot-rk35xx=y/# CONFIG_PACKAGE_uboot-rk35xx is not set/' .config
+          # 禁用所有 uboot-rk35xx 相关的 CONFIG
+          sed -i 's/^CONFIG_PACKAGE_uboot-rk35xx=y$/# CONFIG_PACKAGE_uboot-rk35xx is not set/' .config
+          sed -i '/^CONFIG_PACKAGE_uboot-rk35xx-/s/^/# /' .config
 
-          # 确保 uboot-rockchip 启用
+          # 强制追加禁用配置（确保生效）
+          if ! grep -q "^# CONFIG_PACKAGE_uboot-rk35xx is not set" .config; then
+            echo "# CONFIG_PACKAGE_uboot-rk35xx is not set" >> .config
+          fi
+          echo "CONFIG_PACKAGE_uboot-rk35xx=n" >> .config
+
+          # 启用 uboot-rockchip (支持 RK3568)
           if grep -q "^# CONFIG_PACKAGE_uboot-rockchip is not set" .config 2>/dev/null; then
-              sed -i 's/^# CONFIG_PACKAGE_uboot-rockchip is not set/CONFIG_PACKAGE_uboot-rockchip=y/' .config
+            sed -i 's/^# CONFIG_PACKAGE_uboot-rockchip is not set/CONFIG_PACKAGE_uboot-rockchip=y/' .config
           elif ! grep -q "^CONFIG_PACKAGE_uboot-rockchip=y" .config 2>/dev/null; then
-              echo "CONFIG_PACKAGE_uboot-rockchip=y" >> .config
+            echo "CONFIG_PACKAGE_uboot-rockchip=y" >> .config
           fi
 
-          # 确保 easepi-rk3568 variant 启用
+          # 启用 easepi-rk3568 variant
           if grep -q "^# CONFIG_PACKAGE_uboot-rockchip-easepi-rk3568 is not set" .config 2>/dev/null; then
-              sed -i 's/^# CONFIG_PACKAGE_uboot-rockchip-easepi-rk3568 is not set/CONFIG_PACKAGE_uboot-rockchip-easepi-rk3568=y/' .config
+            sed -i 's/^# CONFIG_PACKAGE_uboot-rockchip-easepi-rk3568 is not set/CONFIG_PACKAGE_uboot-rockchip-easepi-rk3568=y/' .config
           elif ! grep -q "^CONFIG_PACKAGE_uboot-rockchip-easepi-rk3568=y" .config 2>/dev/null; then
-              echo "CONFIG_PACKAGE_uboot-rockchip-easepi-rk3568=y" >> .config
+            echo "CONFIG_PACKAGE_uboot-rockchip-easepi-rk3568=y" >> .config
           fi
 
-          echo "✅ U-Boot 配置已修复 (make defconfig 之后)"
+          echo "✅ U-Boot 配置已修复"
+
+          # 验证 U-Boot 配置
+          echo "=== 验证 U-Boot 配置 ==="
+          echo "uboot-rk35xx 状态:"
+          grep -E "^#?CONFIG_PACKAGE_uboot-rk35xx" .config | head -5 || echo "未找到 uboot-rk35xx 配置"
+          echo "uboot-rockchip 状态:"
+          grep -E "^#?CONFIG_PACKAGE_uboot-rockchip" .config | head -5 || echo "未找到 uboot-rockchip 配置"
 
           # 复制设备树到 uboot-rockchip 源码目录
           echo ">>> 复制设备树到 uboot-rockchip 源码..."
           if [ -f "target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/${DEVICE_TREE}" ]; then
-              mkdir -p package/boot/uboot-rockchip/files/arch/arm64/boot/dts/rockchip/
-              cp -f target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/${DEVICE_TREE} \
-                    package/boot/uboot-rockchip/files/arch/arm64/boot/dts/rockchip/
-              echo "✅ 设备树 ${DEVICE_TREE} 已复制到 uboot-rockchip"
+            mkdir -p package/boot/uboot-rockchip/files/arch/arm64/boot/dts/rockchip/
+            cp -f target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/${DEVICE_TREE} \
+                  package/boot/uboot-rockchip/files/arch/arm64/boot/dts/rockchip/
+            echo "✅ 设备树 ${DEVICE_TREE} 已复制到 uboot-rockchip"
+          else
+            echo "⚠️ 警告: 设备树文件不存在: target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/${DEVICE_TREE}"
+            echo ">>> 检查 target/linux/ 目录结构..."
+            find target/linux -name "*.dts" -o -name "*.dtb" 2>/dev/null | head -10 || echo "没有找到设备树文件"
           fi
 
           # 下载软件包
+          echo ">>> 开始下载软件包..."
           make download -j8
+          echo ">>> 检查下载失败的文件..."
           find dl -size -1024c -exec ls -l {} \;
           find dl -size -1024c -exec rm -f {} \;
 
@@ -180,7 +198,33 @@ jobs:
         run: |
           cd openwrt
           echo "使用 $(nproc) 线程编译"
-          make -j$(nproc) && echo "STATUS=success" >> $GITHUB_ENV || make -j1 V=s && echo "STATUS=success" >> $GITHUB_ENV
+
+          # 最终 U-Boot 检查
+          echo "=== 最终 U-Boot 配置检查 ==="
+          grep -E "uboot-rk35xx|uboot-rockchip" .config || echo "没有找到 U-Boot 配置"
+
+          # 开始编译，捕获详细日志
+          make -j$(nproc) 2>&1 | tee build.log
+          BUILD_STATUS=${PIPESTATUS[0]}
+
+          if [ $BUILD_STATUS -ne 0 ]; then
+            echo ""
+            echo "============================================"
+            echo "❌ 编译失败，exit code: $BUILD_STATUS"
+            echo "============================================"
+            echo ""
+            echo "=== 最后 200 行日志 ==="
+            tail -200 build.log
+            echo ""
+            echo "=== 错误信息提取 ==="
+            grep -iE "error:|error |fatal error|make.*\*\*\*|configure.*error" build.log | tail -50 || echo "没有找到明确的错误信息"
+            echo ""
+            echo "STATUS=failure" >> $GITHUB_ENV
+            exit 1
+          fi
+
+          echo "✅ 编译成功"
+          echo "STATUS=success" >> $GITHUB_ENV
           echo "FILE_DATE=_$(date +'%Y%m%d%H%M')" >> $GITHUB_ENV
 
       - name: 检查磁盘空间
@@ -226,5 +270,5 @@ jobs:
         with:
           name: istoreos-${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
           path: |
-            openwrt/bin/targets/**/
+            openwrt/bin/targets/**
           retention-days: 30
