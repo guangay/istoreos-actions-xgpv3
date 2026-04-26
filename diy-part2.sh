@@ -45,6 +45,10 @@ disable_config() {
 # 目标设备配置
 # =====================================================================
 echo ">>> 配置目标设备..."
+# 基础 Rockchip 目标配置（必须先设置）
+add_config CONFIG_TARGET_rockchip y
+add_config CONFIG_TARGET_rockchip_armv8 y
+add_config CONFIG_TARGET_MULTI_PROFILE y
 add_config CONFIG_TARGET_ARMARM_V8_ARM_V8A y
 add_config CONFIG_TARGET_armvirt_64_VIRTBOARD_VIRT y
 add_config CONFIG_TARGET_DEVICE_rockchip_armv8_DEVICE_nlnet_xiguapi-v3 y
