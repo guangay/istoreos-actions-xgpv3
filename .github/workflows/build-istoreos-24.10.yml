@@ -105,6 +105,46 @@ jobs:
       - name: 安装 feeds
         run: cd openwrt && ./scripts/feeds install -a
 
+      - name: 应用 armv8.mk 设备配置
+        run: |
+          cd openwrt
+          echo ">>> 应用 armv8.mk 设备配置..."
+          # 查找 armv8.mk 文件
+          ARMV8_MK=""
+          for path in \
+            "${{ github.workspace }}/target/linux/rockchip/image/armv8.mk" \
+            "${{ github.workspace }}/target/linux/rockchip/armv8.mk" \
+            "${{ github.workspace }}/rk35xx-24.10/target/linux/rockchip/image/armv8.mk"; do
+            if [ -f "$path" ]; then
+              ARMV8_MK="$path"
+              break
+            fi
+          done
+          if [ -n "$ARMV8_MK" ]; then
+            cp -f "$ARMV8_MK" target/linux/rockchip/armv8.mk
+            echo "✅ armv8.mk 已应用: $ARMV8_MK"
+          else
+            echo "⚠️ armv8.mk 不存在，跳过"
+          fi
+
+      - name: 应用补丁文件
+        run: |
+          cd openwrt
+          echo ">>> 应用补丁文件..."
+          # 应用所有 .patch 文件
+          for patch in \
+            "${{ github.workspace }}/999-add-TD-TECH-option-id.patch" \
+            "${{ github.workspace }}/patches/*.patch" \
+            "${{ github.workspace }}/rk35xx-24.10/*.patch"; do
+            if [ -f "$patch" ]; then
+              echo "Applying: $(basename $patch)"
+              patch -p1 -i "$patch" || echo "⚠️ 补丁 $(basename $patch) 应用失败，继续..."
+            fi
+          done
+          # 统计已应用的补丁
+          PATCH_COUNT=$(ls -1 ${{ github.workspace }}/*.patch ${{ github.workspace }}/patches/*.patch 2>/dev/null | wc -l)
+          echo "✅ 补丁处理完成 (找到 $PATCH_COUNT 个补丁文件)"
+
       - name: 加载自定义配置
         run: |
           [ -e files ] && mv files openwrt/files
