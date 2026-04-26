@@ -1,12 +1,12 @@
 #!/bin/bash
 # =====================================================================
-# diy-part2.sh - 内核配置与软件包配置
-# 针对 nlnet_xiguapi-v3 (RK3568) 设备
+# diy-part2.sh - 内核配置与软件包配置（简化版）
+# 按照 immortalwrt 官方规范配置 xgpv3
 # =====================================================================
 
 echo "=== 执行 diy-part2.sh ==="
 
-# 自动检测 openwrt 目录位置
+# 自动检测 openwrt 目录
 if [ -d "/workdir/openwrt" ]; then
     OPENWRT_DIR="/workdir/openwrt"
 elif [ -d "$GITHUB_WORKSPACE/openwrt" ]; then
@@ -21,59 +21,8 @@ cd "$OPENWRT_DIR"
 echo "当前目录: $(pwd)"
 
 # =====================================================================
-# 修复 feeds 配置（如果 feeds.conf.default 不存在或 feeds 目录损坏）
-# =====================================================================
-echo ">>> 检查并修复 feeds 配置..."
-
-# 查找 feeds.conf 的可能位置
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FEEDS_CONF=""
-for path in \
-    "$SCRIPT_DIR/rk35xx-24.10/feeds.conf" \
-    "$SCRIPT_DIR/feeds.conf" \
-    "$SCRIPT_DIR/../rk35xx-24.10/feeds.conf"; do
-    if [ -f "$path" ]; then
-        FEEDS_CONF="$path"
-        break
-    fi
-done
-
-# 如果 feeds.conf.default 不存在或 feeds 目录损坏，强制重新配置
-if [ ! -f "feeds.conf.default" ] || [ ! -d "feeds/base" ]; then
-    echo "⚠️ feeds 配置损坏或缺失，强制重新配置..."
-    
-    # 清理旧的 feeds
-    rm -rf feeds feeds.conf.default
-    
-    # 复制 feeds.conf
-    if [ -n "$FEEDS_CONF" ]; then
-        cp "$FEEDS_CONF" feeds.conf.default
-        echo "✅ 已复制 feeds.conf (来源: $FEEDS_CONF)"
-    else
-        # 使用默认的 feeds 配置
-        cat > feeds.conf.default << 'EOF'
-src-git base https://github.com/istoreos/istoreos.git;istoreos-24.10
-src-git packages https://github.com/istoreos/istoreos.git;istoreos-24.10
-src-git luci https://github.com/istoreos/istoreos.git;istoreos-24.10
-src-git routing https://github.com/openwrt/routing.git;openwrt-23.05
-src-git telephony https://github.com/openwrt/telephony.git;openwrt-23.05
-EOF
-        echo "✅ 已创建默认 feeds.conf.default"
-    fi
-    
-    # 更新 feeds
-    ./scripts/feeds update -a
-    ./scripts/feeds install -a
-    echo "✅ feeds 已重新安装"
-else
-    echo "✅ feeds 配置正常"
-fi
-
-# =====================================================================
 # 辅助函数
 # =====================================================================
-
-# 安全追加配置（避免重复）
 add_config() {
     local key="$1"
     local value="$2"
@@ -82,7 +31,6 @@ add_config() {
     fi
 }
 
-# 安全禁用配置
 disable_config() {
     local key="$1"
     if ! grep -q "^# ${key} is not set" .config 2>/dev/null; then
@@ -91,153 +39,143 @@ disable_config() {
 }
 
 # =====================================================================
-# 目标设备配置
+# 目标设备配置（immortalwrt 官方规范）
 # =====================================================================
 echo ">>> 配置目标设备..."
-# 基础 Rockchip 目标配置（必须先设置）
+
+# 基础目标配置
 add_config CONFIG_TARGET_rockchip y
 add_config CONFIG_TARGET_rockchip_armv8 y
 add_config CONFIG_TARGET_MULTI_PROFILE y
-add_config CONFIG_TARGET_ARMARM_V8_ARM_V8A y
-add_config CONFIG_TARGET_armvirt_64_VIRTBOARD_VIRT y
-add_config CONFIG_TARGET_DEVICE_rockchip_armv8_DEVICE_nlnet_xiguapi-v3 y
+add_config CONFIG_TARGET_DEVICE_rockchip_armv8_DEVICE_nlnet_xgpv3 y
 add_config CONFIG_TARGET_BOARD "rockchip"
 add_config CONFIG_TARGET_SUBTARGET "armv8"
-add_config CONFIG_TARGET_PROFILE "DEVICE_nlnet_xiguapi-v3"
+add_config CONFIG_TARGET_PROFILE "DEVICE_nlnet_xgpv3"
 
 # =====================================================================
-# 5G MHI 驱动 (高通方案)
+# 设备树文件（按 immortalwrt 官方规范放置）
 # =====================================================================
-echo ">>> 配置 5G MHI 驱动..."
-add_config CONFIG_KMOD_MHI_PCI_GENERIC y
-add_config CONFIG_KMOD_MHI_PCI_QCOM_GEN y
+echo ">>> 配置设备树文件..."
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+# 设备树源路径（用户仓库中的位置）
+DTS_SOURCE="$SCRIPT_DIR/target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/rk3568-xiguapi-v3.dts"
+
+if [ -f "$DTS_SOURCE" ]; then
+    mkdir -p target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/
+    cp -f "$DTS_SOURCE" target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/
+    # 同时复制到 uboot 目录
+    mkdir -p package/boot/uboot-rockchip/files/arch/arm64/boot/dts/rockchip/
+    cp -f "$DTS_SOURCE" package/boot/uboot-rockchip/files/arch/arm64/boot/dts/rockchip/
+    echo "✅ 设备树已复制"
+else
+    echo "⚠️ 设备树文件不存在: $DTS_SOURCE"
+    # 尝试其他可能的位置
+    for alt_path in \
+        "$SCRIPT_DIR/target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/rk3568-xiguapi-v3.dts"; do
+        if [ -f "$alt_path" ]; then
+            echo ">>> 找到替代设备树: $alt_path"
+            mkdir -p target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/
+            cp -f "$alt_path" target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/
+            mkdir -p package/boot/uboot-rockchip/files/arch/arm64/boot/dts/rockchip/
+            cp -f "$alt_path" package/boot/uboot-rockchip/files/arch/arm64/boot/dts/rockchip/
+            echo "✅ 设备树已复制"
+            break
+        fi
+    done
+fi
 
 # =====================================================================
-# USB 调制解调器支持
+# 设备特定配置（immortalwrt 官方 armv8.mk 规范）
 # =====================================================================
-echo ">>> 配置 USB 调制解调器..."
-add_config CONFIG_PACKAGE_kmod-usb-qmi-dmux y
-add_config CONFIG_PACKAGE_kmod-usb-net-qmi-wwan y
-add_config CONFIG_PACKAGE_kmod-usb-net-cdc-mbim y
-add_config CONFIG_PACKAGE_kmod-usb-net-rndis y
-add_config CONFIG_PACKAGE_kmod-usb-net-cdc-ncm y
-add_config CONFIG_PACKAGE_kmod-usb-net-cdc-ether y
+echo ">>> 应用 armv8.mk 设备配置..."
+
+ARMV8_MK=""
+for path in \
+    "$SCRIPT_DIR/target/linux/rockchip/image/armv8.mk" \
+    "$SCRIPT_DIR/target/linux/rockchip/armv8.mk"; do
+    if [ -f "$path" ]; then
+        ARMV8_MK="$path"
+        break
+    fi
+done
+
+if [ -n "$ARMV8_MK" ]; then
+    mkdir -p target/linux/rockchip
+    cp -f "$ARMV8_MK" target/linux/rockchip/armv8.mk
+    echo "✅ armv8.mk 已应用"
+else
+    echo "⚠️ armv8.mk 不存在，跳过"
+fi
 
 # =====================================================================
-# RK3568 GPIO/ADC 支持
+# 应用补丁（TD-TECH option id）
 # =====================================================================
-echo ">>> 配置 RK3568 GPIO/ADC..."
-add_config CONFIG_PACKAGE_kmod-gpio-button-hotplug m
-add_config CONFIG_PACKAGE_kmod-adc-lib函式库 m
-add_config CONFIG_PACKAGE_kmod-saradc m
-add_config CONFIG_PACKAGE_kmod-pwm-fan m
+echo ">>> 应用补丁..."
+
+PATCH_FILE=""
+for path in \
+    "$SCRIPT_DIR/999-add-TD-TECH-option-id.patch" \
+    "$SCRIPT_DIR/patches/999-add-TD-TECH-option-id.patch" \
+    "$SCRIPT_DIR/target/linux/rockchip/999-add-TD-TECH-option-id.patch"; do
+    if [ -f "$path" ]; then
+        PATCH_FILE="$path"
+        break
+    fi
+done
+
+if [ -n "$PATCH_FILE" ]; then
+    patch -p1 -i "$PATCH_FILE" || echo "⚠️ 补丁应用失败，继续..."
+    echo "✅ 补丁已应用"
+else
+    echo "⚠️ 补丁文件不存在，跳过"
+fi
 
 # =====================================================================
-# 屏幕驱动 (GC9307)
+# 屏幕驱动（xgp-v3-screen）
 # =====================================================================
 echo ">>> 配置屏幕驱动..."
-add_config CONFIG_PACKAGE_kmod-spi-gpio m
-add_config CONFIG_PACKAGE_xgp-v3-screen m
+
+# 优先使用用户仓库中的驱动
+SCREEN_LOCAL="$SCRIPT_DIR/xgp-v3-screen"
+SCREEN_PKG="package/xgp-v3-screen"
+
+if [ -d "$SCREEN_LOCAL" ]; then
+    rm -rf "$SCREEN_PKG"
+    cp -r "$SCREEN_LOCAL" "$SCREEN_PKG"
+    echo "✅ 使用本地 xgp-v3-screen"
+elif [ -d "$SCREEN_PKG" ]; then
+    echo "✅ xgp-v3-screen 已存在"
+else
+    # 从 GitHub 克隆
+    git clone --depth 1 https://github.com/junhong-l/xgp-v3-screen.git "$SCREEN_PKG"
+    echo "✅ xgp-v3-screen 已克隆"
+fi
 
 # =====================================================================
-# USB OTG / Type-C 支持
+# 基本系统配置
 # =====================================================================
-echo ">>> 配置 USB OTG / Type-C..."
-add_config CONFIG_PACKAGE_kmod-usb-gadget m
-add_config CONFIG_PACKAGE_kmod-usb-gadget-eth m
-add_config CONFIG_PACKAGE_kmod-usb-roles m
-add_config CONFIG_PACKAGE_kmod-usb-typec m
-add_config CONFIG_PACKAGE_kmod-usbpd-dpm7791 m
-add_config CONFIG_PACKAGE_kmod-i2c-designware m
-add_config CONFIG_PACKAGE_kmod-i2c-gpio m
-add_config CONFIG_PACKAGE_kmod-i2c-mux-pinctrl m
+echo ">>> 配置基本系统..."
 
-# =====================================================================
-# PCIe 配置 (5G 模组)
-# =====================================================================
-echo ">>> 配置 PCIe..."
-add_config CONFIG_PCIE_BROKEN_RC_BAR y
-add_config CONFIG_PCIE_DW y
-
-# =====================================================================
-# 网络配置
-# =====================================================================
-echo ">>> 配置网络..."
+# IPv6 支持
 add_config CONFIG_IPV6 y
-add_config CONFIG_BRIDGE y
-add_config CONFIG_PACKAGE_kmod-ipip y
-add_config CONFIG_PACKAGE_kmod-gre y
-add_config CONFIG_PACKAGE_kmod-ip-vti y
-add_config CONFIG_PACKAGE_kmod-nf-conntrack-netlink y
 
-# =====================================================================
-# LuCI 应用
-# =====================================================================
-echo ">>> 配置 LuCI 应用..."
-add_config CONFIG_PACKAGE_luci-app-modemmanager y
-add_config CONFIG_PACKAGE_luci-proto-modemmanager y
-add_config CONFIG_PACKAGE_luci-proto-qmi y
-add_config CONFIG_PACKAGE_luci-proto-ncm y
-add_config CONFIG_PACKAGE_luci-proto-ppp y
-add_config CONFIG_PACKAGE_luci-proto-qmi m
-add_config CONFIG_PACKAGE_luci-proto-ncm m
-
-# =====================================================================
-# QMI 工具
-# =====================================================================
-echo ">>> 配置 QMI 工具..."
-add_config CONFIG_PACKAGE_qmi-utils y
-add_config CONFIG_PACKAGE_umbim y
-add_config CONFIG_PACKAGE_atinout m
-add_config CONFIG_PACKAGE_uqmi y
-
-# =====================================================================
-# USB 工具
-# =====================================================================
-echo ">>> 配置 USB 工具..."
-add_config CONFIG_PACKAGE_usbmuxd y
-add_config CONFIG_PACKAGE_usbutils y
-add_config CONFIG_PACKAGE_usbreset y
-add_config CONFIG_PACKAGE_libusb-1.0 y
-
-# =====================================================================
-# 存储支持
-# =====================================================================
-echo ">>> 配置存储支持..."
-add_config CONFIG_PACKAGE_kmod-ata-ahci m
-add_config CONFIG_PACKAGE_kmod-sdhci m
-add_config CONFIG_PACKAGE_kmod-mmc m
-add_config CONFIG_PACKAGE_kmod-scsi-core m
-add_config CONFIG_PACKAGE_kmod-usb-storage m
-add_config CONFIG_PACKAGE_kmod-fs-ext4 m
-add_config CONFIG_PACKAGE_kmod-fs-vfat m
-add_config CONFIG_PACKAGE_kmod-fs-ntfs m
-add_config CONFIG_PACKAGE_ntfs-3g m
-add_config CONFIG_PACKAGE_kmod-fs-exfat m
-add_config CONFIG_PACKAGE_kmod-fs-btrfs m
-add_config CONFIG_PACKAGE_kmod-dm m
-add_config CONFIG_PACKAGE_kmod-dm-wwatian m
-add_config CONFIG_PACKAGE_dosfstools m
-add_config CONFIG_PACKAGE_ntfs-3g m
-add_config CONFIG_PACKAGE_exfat-fsck m
-add_config CONFIG_PACKAGE_kmod-scsi-generic m
-
-# =====================================================================
-# 禁用第三方 (third_party)
-# =====================================================================
-echo ">>> 禁用 third_party..."
+# 禁用 third_party（按要求）
 disable_config CONFIG_PACKAGE_third_party
 
 # =====================================================================
-# 编译前最终确保设备配置
+# 编译前验证
 # =====================================================================
-echo ">>> 编译前最终确保设备配置..."
-if ! grep -q "CONFIG_TARGET_DEVICE_rockchip_armv8_DEVICE_nlnet_xiguapi-v3=y" .config 2>/dev/null; then
-    echo "CONFIG_TARGET_DEVICE_rockchip_armv8_DEVICE_nlnet_xiguapi-v3=y" >> .config
-    echo "✅ 已添加设备配置"
+echo ">>> 验证设备配置..."
+
+# 确保设备配置存在
+DEVICE_CONFIG="CONFIG_TARGET_DEVICE_rockchip_armv8_DEVICE_nlnet_xgpv3=y"
+if ! grep -q "^${DEVICE_CONFIG}" .config 2>/dev/null; then
+    echo "⚠️ 设备配置丢失，强制添加..."
+    echo "$DEVICE_CONFIG" >> .config
 fi
 
-# 验证并更新配置
 make defconfig
 echo "✅ 配置已更新 ($(wc -l < .config) 行)"
 
