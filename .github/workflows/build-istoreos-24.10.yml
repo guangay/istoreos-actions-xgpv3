@@ -111,9 +111,7 @@ jobs:
           [ -e ../user-repo/rk35xx-24.10/feeds.conf ] && cp ../user-repo/rk35xx-24.10/feeds.conf ./feeds.conf.default
           sed -i '/src-include.*feeds.conf.default/d' ./feeds.conf.default
           chmod +x $GITHUB_WORKSPACE/$DIY_P1_SH
-          ./$DIY_P1_SH || true
-
-      # 补丁步骤已移除 - 设备定义改在 diy-part2.sh 中通过脚本添加
+          $GITHUB_WORKSPACE/$DIY_P1_SH || true   # ← 修复：使用绝对路径
 
       - name: 更新 feeds
         run: |
@@ -157,7 +155,7 @@ jobs:
         run: |
           cd openwrt
           chmod +x $GITHUB_WORKSPACE/$DIY_P2_SH
-          ./$DIY_P2_SH
+          $GITHUB_WORKSPACE/$DIY_P2_SH   # ← 修复：使用绝对路径
           echo "✅ 按需配置已追加"
 
       - name: 验证设备配置
