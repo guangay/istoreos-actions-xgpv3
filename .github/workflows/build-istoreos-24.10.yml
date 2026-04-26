@@ -107,6 +107,14 @@ jobs:
       - name: 安装 feeds
         run: cd openwrt && ./scripts/feeds install -a
 
+      - name: 禁用 webdav2
+        run: |
+          cd openwrt
+          # 禁用 webdav2 (linkease_nas feed 中默认启用)
+          sed -i '/CONFIG_PACKAGE_webdav2/d' .config
+          echo "# CONFIG_PACKAGE_webdav2 is not set" >> .config
+          echo "✅ 已禁用 webdav2"
+
       - name: 加载自定义配置
         run: |
           [ -e user-repo/files ] && cp -r user-repo/files openwrt/files
