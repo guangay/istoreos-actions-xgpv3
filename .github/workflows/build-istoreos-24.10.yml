@@ -1,4 +1,5 @@
 name: Build iStoreOS Firmware
+
 on:
   workflow_dispatch:
     inputs:
@@ -8,7 +9,7 @@ on:
         required: true
       os_name:
         description: '系统名称'
-        default: 'XGPv3 iStore'
+        default: 'iStore OS'
         required: true
       enable_wifi:
         description: '启用 WiFi'
@@ -20,9 +21,9 @@ on:
 env:
   REPO_URL: https://github.com/istoreos/istoreos
   REPO_BRANCH: istoreos-24.10
-  USER_REPO_URL: https://github.com/guangay/istoreos-actions-xgpv3
-  DEVICE_NAME: nlnet_xgpv3
-  DEVICE_TREE: rk3568-xiguapi-v3
+  DEVICE_NAME: nlnet_xiguapi-v3
+  DEVICE_TREE: rk3568-xiguapi-v3.dts
+  FEEDS_CONF: feeds.conf
   DIY_P1_SH: diy-part1.sh
   DIY_P2_SH: diy-part2.sh
   UPLOAD_FIRMWARE: true
@@ -34,9 +35,6 @@ jobs:
     timeout-minutes: 600
 
     steps:
-      # =================================================================
-      # 准备阶段
-      # =================================================================
       - name: 准备完成
         uses: actions/checkout@v4
 
@@ -51,173 +49,69 @@ jobs:
           echo "------------------------------- 磁盘信息 -------------------------------"
           df -Th
 
-      # =================================================================
-      # 环境配置
-      # =================================================================
       - name: 初始化编译环境
+        env:
+          DEBIAN_FRONTEND: noninteractive
         run: |
-          # 清理冲突软件
           sudo rm -rf /etc/apt/sources.list.d/* /usr/share/dotnet /etc/mysql /etc/php /usr/local/lib/android /opt/ghc
+          sudo -E apt-get -qq update
+          sudo -E apt-get -qq install -y build-essential clang flex g++ gawk gcc-multilib gettext \
+            git libncurses5-dev libssl-dev rsync unzip zlib1g-dev swig libpython3-dev \
+            python3 python3-pip python3-venv python3-dev aria2 jq subversion qemu-utils \
+            ccache rename libelf-dev libgmp-dev libmpc-dev libmpfr-dev
+          pip3 install --user pyelftools pysocks unidecode requests || true
           sudo docker rmi `docker images -q` || true
           sudo docker image prune -a -f || true
-
-          # 安装必要工具
-          sudo apt-get update
-          sudo apt-get install -y device-tree-compiler bc bison build-essential ccache curl \
-            flex gawk gcc g++ gettext git git-lfs gnupg gperf help2man \
-            libelf-dev libncurses5-dev libssl-dev libsdl1.2-dev libtool \
-            lrzsz msmtp p7zip p7zip-full python3 python3-pip qemu-utils \
-            rsync sassc screen unzip vim wget xxd xz-utils zip zlib1g-dev
-
+          sudo -E apt-get -y purge azure-cli ghc* zulu* hhvm llvm* firefox google* dotnet* powershell openjdk* adoptopenjdk* mysql* php* mongodb* dotnet* moby* snapd* android* || true
+          sudo -E apt-get -qq autoremove --purge
+          sudo -E apt-get -qq clean
+          sudo timedatectl set-timezone "$TZ"
           sudo mkdir -p /workdir
           sudo chown $USER:$GROUPS /workdir
 
-      # =================================================================
-      # 克隆仓库
-      # =================================================================
-      - name: 克隆用户仓库
-        run: |
-          git clone $USER_REPO_URL user-repo
-          echo "✅ 用户仓库已克隆"
-          ls -la user-repo/
-
       - name: 克隆源码
+        working-directory: /workdir
         run: |
-          sudo mkdir -p /workdir
-          sudo chown runner:runner /workdir
-          cd /workdir
           df -hT $PWD
           git clone $REPO_URL -b $REPO_BRANCH openwrt
-          ln -sf /workdir/openwrt ${{ github.workspace }}/openwrt
+          ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
 
-      # =================================================================
-      # 缓存
-      # =================================================================
       - name: 缓存构建
         uses: klever1988/cachewrtbuild@main
         with:
           ccache: 'true'
-          mix_key: ${{ env.REPO_BRANCH }}-${{ env.DEVICE_NAME }}
+          mixkey: ${{ env.REPO_BRANCH }}-${{ env.DEVICE_NAME }}
           prefix: ${{ github.workspace }}/openwrt
 
-      # =================================================================
-      # Feeds 配置（按 immortalwrt 官方规范：只保留官方源）
-      # =================================================================
-      - name: 配置 feeds（官方源，无第三方）
+      - name: 加载 feeds 配置
+        env:
+          FEEDS_CONF_PATH: feeds.conf
         run: |
+          [ -e $FEEDS_CONF_PATH ] && mv $FEEDS_CONF_PATH openwrt/$FEEDS_CONF
+          chmod +x $DIY_P1_SH
           cd openwrt
-          
-          # 清理旧 feeds
-          rm -rf feeds
-          
-          # 复制 feeds 配置（只保留官方源，无第三方）
-          if [ -e ../user-repo/rk35xx-24.10/feeds.conf ]; then
-            cp ../user-repo/rk35xx-24.10/feeds.conf ./feeds.conf.default
-            echo "✅ 使用用户仓库的 feeds.conf"
-          else
-            # 使用内联官方配置（无第三方）
-            cat > feeds.conf.default << 'EOF'
-src-git base https://github.com/istoreos/istoreos.git;istoreos-24.10
-src-git packages https://github.com/istoreos/istoreos.git;istoreos-24.10
-src-git luci https://github.com/istoreos/istoreos.git;istoreos-24.10
-src-git routing https://github.com/openwrt/routing.git;openwrt-23.05
-src-git telephony https://github.com/openwrt/telephony.git;openwrt-23.05
-EOF
-            echo "✅ 使用内联官方 feeds.conf（无第三方）"
-          fi
-          
-          chmod +x ${{ github.workspace }}/$DIY_P1_SH
-          $GITHUB_WORKSPACE/$DIY_P1_SH || true
+          $GITHUB_WORKSPACE/$DIY_P1_SH
 
       - name: 更新 feeds
+        run: cd openwrt && ./scripts/feeds update -a
+
+      - name: 克隆 xgp_screen 屏幕驱动
         run: |
-          cd openwrt
-          ./scripts/feeds update -a
-          echo "✅ feeds 已更新"
+          rm -rf xgp-v3-screen
+          git clone --depth 1 https://github.com/junhong-l/xgp-v3-screen.git
+          mv xgp-v3-screen openwrt/package/xgp-v3-screen
+          echo ">>> xgp_screen 屏幕驱动已安装"
 
       - name: 安装 feeds
-        run: |
-          cd openwrt
-          ./scripts/feeds install -a
-          echo "✅ feeds 已安装"
+        run: cd openwrt && ./scripts/feeds install -a
 
-      # =================================================================
-      # 配置 - 种子配置 + 按需追加
-      # =================================================================
-      - name: 复制 files 目录
+      - name: 加载自定义配置
         run: |
+          [ -e files ] && mv files openwrt/files
+          [ -e .config ] && mv .config openwrt/.config
+          chmod +x $DIY_P2_SH
           cd openwrt
-          # 复制 files 目录（自定义文件：防火墙、启动脚本等）
-          [ -e ../user-repo/files ] && cp -r ../user-repo/files .
-          echo "✅ files 目录已复制"
-
-      - name: 复制设备树文件
-        run: |
-          cd openwrt
-          echo "=== 复制设备树文件 ==="
-          DTS_SOURCE="${GITHUB_WORKSPACE}/user-repo/target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/${DEVICE_TREE}.dts"
-          
-          if [ -f "$DTS_SOURCE" ]; then
-            mkdir -p target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/
-            cp -f "$DTS_SOURCE" target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/
-            # 同时复制到 uboot 目录
-            mkdir -p package/boot/uboot-rockchip/files/arch/arm64/boot/dts/rockchip/
-            cp -f "$DTS_SOURCE" package/boot/uboot-rockchip/files/arch/arm64/boot/dts/rockchip/
-            echo "✅ 设备树复制成功: $DTS_SOURCE"
-          else
-            echo "⚠️ 设备树文件不存在: $DTS_SOURCE"
-            ls -la ../user-repo/target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/ 2>/dev/null || echo "目录不存在"
-          fi
-
-      - name: 复制 armv8.mk
-        run: |
-          cd openwrt
-          echo "=== 复制 armv8.mk ==="
-          # armv8.mk 在 image/ 子目录下
-          ARMV8_SOURCE="${GITHUB_WORKSPACE}/user-repo/target/linux/rockchip/image/armv8.mk"
-          
-          if [ -f "$ARMV8_SOURCE" ]; then
-            mkdir -p target/linux/rockchip/
-            cp -f "$ARMV8_SOURCE" target/linux/rockchip/armv8.mk
-            echo "✅ armv8.mk 复制成功"
-          else
-            echo "⚠️ armv8.mk 不存在于用户仓库，跳过（使用上游默认）"
-          fi
-
-      - name: 应用补丁
-        run: |
-          cd openwrt
-          echo "=== 应用补丁 ==="
-          PATCH_SOURCE="${GITHUB_WORKSPACE}/user-repo/999-add-TD-TECH-option-id.patch"
-          
-          if [ -f "$PATCH_SOURCE" ]; then
-            patch -p1 -i "$PATCH_SOURCE" || echo "⚠️ 补丁应用失败，继续..."
-            echo "✅ 补丁已应用"
-          else
-            echo "⚠️ 补丁文件不存在: $PATCH_SOURCE"
-          fi
-
-      - name: 生成种子配置
-        run: |
-          cd openwrt
-          make defconfig
-          echo "✅ 种子配置已生成 ($(wc -l < .config) 行)"
-
-      - name: 按需追加配置
-        run: |
-          cd openwrt
-          chmod +x ${{ github.workspace }}/$DIY_P2_SH
           $GITHUB_WORKSPACE/$DIY_P2_SH
-          echo "✅ 按需配置已追加"
-
-      - name: 禁用 webdav2
-        run: |
-          cd openwrt
-          for pkg in webdav2 luci-app-webdav2; do
-            sed -i "s/^CONFIG_PACKAGE_${pkg}=.*/# CONFIG_PACKAGE_${pkg} is not set/" .config
-          done
-          rm -rf package/feeds/*/webdav2 2>/dev/null || true
-          echo "✅ 已禁用 webdav2"
 
       - name: 设置 LAN IP 地址
         run: |
@@ -235,119 +129,60 @@ EOF
           cd openwrt
           echo "CONFIG_PACKAGE_kmod-mt7915e=y" >> .config
           echo "CONFIG_PACKAGE_kmod-mt7603e=y" >> .config
-          echo "✅ WiFi 已启用"
 
-      # =================================================================
-      # 下载与编译
-      # =================================================================
       - name: 下载软件包
         id: package
         run: |
           cd openwrt
-          echo ">>> 开始下载软件包..."
-          make download -j8
-          echo ">>> 检查下载失败的文件..."
-          find dl -size -1024c -exec ls -l {} \; 2>/dev/null || true
-          find dl -size -1024c -exec rm -f {} \; 2>/dev/null || true
-
-      # =================================================================
-      # 编译前最终检查
-      # =================================================================
-      - name: 编译前最终检查设备配置
-        run: |
-          cd openwrt
-          echo "=== 编译前最终检查设备配置 ==="
-          
-          # 确保基础目标配置存在
-          if ! grep -q "^CONFIG_TARGET_rockchip=y" .config 2>/dev/null; then
-            echo "CONFIG_TARGET_rockchip=y" >> .config
-            echo "✅ 已添加 CONFIG_TARGET_rockchip"
-          fi
-          
-          if ! grep -q "^CONFIG_TARGET_rockchip_armv8=y" .config 2>/dev/null; then
-            echo "CONFIG_TARGET_rockchip_armv8=y" >> .config
-            echo "✅ 已添加 CONFIG_TARGET_rockchip_armv8"
-          fi
-          
-          if ! grep -q "^CONFIG_TARGET_MULTI_PROFILE=y" .config 2>/dev/null; then
-            echo "CONFIG_TARGET_MULTI_PROFILE=y" >> .config
-            echo "✅ 已添加 CONFIG_TARGET_MULTI_PROFILE"
-          fi
-          
-          # 强制确保设备配置存在
-          DEVICE_CONFIG="CONFIG_TARGET_DEVICE_rockchip_armv8_DEVICE_nlnet_xgpv3=y"
-          if ! grep -q "^${DEVICE_CONFIG}" .config 2>/dev/null; then
-            echo "⚠️ 设备配置丢失，重新添加..."
-            echo "$DEVICE_CONFIG" >> .config
-          fi
-          
-          echo ">>> 执行 make defconfig..."
           make defconfig
-          
-          # 验证配置
-          if grep -q "^${DEVICE_CONFIG}" .config; then
-            echo "✅ 设备配置检查通过"
-          else
-            echo "❌ 设备配置检查失败!"
-            grep "CONFIG_TARGET_DEVICE" .config || echo "无"
-            exit 1
+
+          # =====================================================
+          # 关键修复: 在 make defconfig 之后再次禁用 uboot-rk35xx
+          # 因为 make defconfig 会根据设备 profile 重新选中它
+          # =====================================================
+          echo ">>> 修复 U-Boot 配置 (make defconfig 之后)..."
+
+          # 禁用 uboot-rk35xx (不支持 RK3568)
+          sed -i 's/CONFIG_PACKAGE_uboot-rk35xx=y/# CONFIG_PACKAGE_uboot-rk35xx is not set/' .config
+
+          # 确保 uboot-rockchip 启用
+          if grep -q "^# CONFIG_PACKAGE_uboot-rockchip is not set" .config 2>/dev/null; then
+              sed -i 's/^# CONFIG_PACKAGE_uboot-rockchip is not set/CONFIG_PACKAGE_uboot-rockchip=y/' .config
+          elif ! grep -q "^CONFIG_PACKAGE_uboot-rockchip=y" .config 2>/dev/null; then
+              echo "CONFIG_PACKAGE_uboot-rockchip=y" >> .config
           fi
 
-      # =================================================================
-      # 编译
-      # =================================================================
+          # 确保 easepi-rk3568 variant 启用
+          if grep -q "^# CONFIG_PACKAGE_uboot-rockchip-easepi-rk3568 is not set" .config 2>/dev/null; then
+              sed -i 's/^# CONFIG_PACKAGE_uboot-rockchip-easepi-rk3568 is not set/CONFIG_PACKAGE_uboot-rockchip-easepi-rk3568=y/' .config
+          elif ! grep -q "^CONFIG_PACKAGE_uboot-rockchip-easepi-rk3568=y" .config 2>/dev/null; then
+              echo "CONFIG_PACKAGE_uboot-rockchip-easepi-rk3568=y" >> .config
+          fi
+
+          echo "✅ U-Boot 配置已修复 (make defconfig 之后)"
+
+          # 复制设备树到 uboot-rockchip 源码目录
+          echo ">>> 复制设备树到 uboot-rockchip 源码..."
+          if [ -f "target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/${DEVICE_TREE}" ]; then
+              mkdir -p package/boot/uboot-rockchip/files/arch/arm64/boot/dts/rockchip/
+              cp -f target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/${DEVICE_TREE} \
+                    package/boot/uboot-rockchip/files/arch/arm64/boot/dts/rockchip/
+              echo "✅ 设备树 ${DEVICE_TREE} 已复制到 uboot-rockchip"
+          fi
+
+          # 下载软件包
+          make download -j8
+          find dl -size -1024c -exec ls -l {} \;
+          find dl -size -1024c -exec rm -f {} \;
+
       - name: 编译固件
         id: compile
         run: |
           cd openwrt
-
-          # 动态生成版本号
-          VERSION="$(date +'%Y.%m.%d.%H')"
-          echo "固件版本: $VERSION"
-
-          # 精确的设备配置检查
-          echo "=== 设备配置最终确认 ==="
-          if grep -q "^CONFIG_TARGET_DEVICE_rockchip_armv8_DEVICE_nlnet_xgpv3=y" .config; then
-            echo "✅ 设备配置确认通过"
-          else
-            echo "❌ 错误: 设备配置未启用!"
-            exit 1
-          fi
-
           echo "使用 $(nproc) 线程编译"
+          make -j$(nproc) && echo "STATUS=success" >> $GITHUB_ENV || make -j1 V=s && echo "STATUS=success" >> $GITHUB_ENV
+          echo "FILE_DATE=_$(date +'%Y%m%d%H%M')" >> $GITHUB_ENV
 
-          # 首次编译
-          make -j$(nproc) V=s 2>&1 | tee build.log
-          BUILD_STATUS=${PIPESTATUS[0]}
-
-          # 失败时自动重试
-          if [ $BUILD_STATUS -ne 0 ]; then
-            echo ""
-            echo "============================================"
-            echo "❌ 首次编译失败，exit code: $BUILD_STATUS"
-            echo "============================================"
-            tail -200 build.log
-            echo ""
-            echo ">>> 开启单线程详细模式重试..."
-            make V=s -j1 2>&1 | tee build_retry.log
-            RETRY_STATUS=${PIPESTATUS[0]}
-
-            if [ $RETRY_STATUS -ne 0 ]; then
-              echo "❌ 重试编译失败"
-              tail -100 build_retry.log
-              echo "STATUS=failure" >> $GITHUB_ENV
-              exit 1
-            fi
-            echo "✅ 重试编译成功"
-          fi
-
-          echo "✅ 编译成功"
-          echo "STATUS=success" >> $GITHUB_ENV
-          echo "FIRMWARE_VERSION=$VERSION" >> $GITHUB_ENV
-
-      # =================================================================
-      # 后续处理
-      # =================================================================
       - name: 检查磁盘空间
         if: success() || failure()
         run: df -hT
@@ -355,9 +190,10 @@ EOF
       - name: 调试固件目录
         if: always()
         run: |
-          echo "=== 检查编译输出目录 ==="
-          ls -la openwrt/bin/ 2>/dev/null || echo "bin/ 不存在"
-          find openwrt/bin/targets -name "*.img" 2>/dev/null | head -5
+          echo "=== 调试: 检查编译输出目录 ==="
+          ls -la openwrt/bin/ 2>/dev/null || echo "openwrt/bin/ 不存在"
+          ls -la openwrt/bin/targets/ 2>/dev/null || echo "openwrt/bin/targets/ 不存在"
+          find openwrt/bin/targets -name "*.img" -o -name "*.bin" 2>/dev/null | head -20 || echo "没有找到固件文件"
 
       - name: 整理固件文件
         id: organize
@@ -373,6 +209,7 @@ EOF
           echo "固件目录: $TARGET_DIR"
           cd "$TARGET_DIR"
           rm -rf packages
+          ls -la
           echo "固件文件:"
           find . -type f \( -name "*.img" -o -name "*.bin" -o -name "*.tar.gz" \) -exec ls -lh {} \;
 
@@ -380,14 +217,14 @@ EOF
         if: env.STATUS == 'success'
         run: |
           find openwrt/bin/targets -mindepth 2 -maxdepth 2 -type d ! -name 'packages' | while read dir; do
-            cp openwrt/.config "$dir/.config" 2>/dev/null && echo "已保存 .config"
+            cp openwrt/.config "$dir/.config" 2>/dev/null && echo "已保存 .config 到 $dir"
           done
 
       - name: 上传固件
         if: env.STATUS == 'success' && env.UPLOAD_FIRMWARE == 'true' && !cancelled()
         uses: actions/upload-artifact@v4
         with:
-          name: istoreos-${{ env.DEVICE_NAME }}-${{ env.FIRMWARE_VERSION }}
+          name: istoreos-${{ env.DEVICE_NAME }}${{ env.FILE_DATE }}
           path: |
-            openwrt/bin/targets/**
+            openwrt/bin/targets/**/
           retention-days: 30
