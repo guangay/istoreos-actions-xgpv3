@@ -98,7 +98,7 @@ jobs:
         uses: klever1988/cachewrtbuild@main
         with:
           ccache: 'true'
-          mixkey: ${{ env.REPO_BRANCH }}-${{ env.DEVICE_NAME }}
+          mix_key: ${{ env.REPO_BRANCH }}-${{ env.DEVICE_NAME }}
           prefix: ${{ github.workspace }}/openwrt
 
       # =================================================================
@@ -185,20 +185,7 @@ jobs:
             make defconfig
           fi
           grep "DEVICE_nlnet_xiguapi-v3" .config || true
-      - name: 生成初始配置
-        run: |
-          cd openwrt
-          # 使用 iStoreOS 的默认 RK3568 基础配置（如果有）或直接 make defconfig
-          make defconfig
-          echo "✅ 默认 defconfig 完成"
 
-      - name: 运行自定义配置脚本
-        run: |
-          cd openwrt
-          chmod +x $GITHUB_WORKSPACE/$DIY_P2_SH
-          $GITHUB_WORKSPACE/$DIY_P2_SH
-          make defconfig   # 再次补全依赖
-          echo "✅ 自定义配置已应用并再次 defconfig"
       - name: 禁用 webdav2
         run: |
           cd openwrt
@@ -232,13 +219,18 @@ jobs:
       # =================================================================
       # 下载与编译
       # =================================================================
-            - name: 复制设备树文件
+      - name: 复制设备树文件
         run: |
+          cd openwrt
+          echo "=== 复制设备树文件 ==="
           DTS_SOURCE="${GITHUB_WORKSPACE}/user-repo/target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/${DEVICE_TREE}.dts"
-          TARGET_DIR="openwrt/target/linux/rockchip/files/arch/arm64/boot/dts/rockchip"
-          mkdir -p "$TARGET_DIR"
-          cp -fv "$DTS_SOURCE" "$TARGET_DIR/"
-          echo "✅ 设备树已复制到 $TARGET_DIR"
+
+          if [ -f "$DTS_SOURCE" ]; then
+            mkdir -p target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/
+            cp -f "$DTS_SOURCE" target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/
+            mkdir -p package/boot/uboot-rockchip/files/arch/arm64/boot/dts/rockchip/
+            cp -f "$DTS_SOURCE" package/boot/uboot-rockchip/files/arch/arm64/boot/dts/rockchip/
+            echo "✅ 设备树复制成功!"
           else
             echo "⚠️ 警告: 设备树文件不存在"
             find ${GITHUB_WORKSPACE}/user-repo -name "*.dts*" 2>/dev/null | head -5
