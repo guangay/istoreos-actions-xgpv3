@@ -1,84 +1,172 @@
 #!/bin/bash
-#
-# diy-part2.sh：为 nlnet_xiguapi-v3 添加设备支持并注入自定义配置
-#
+# =====================================================================
+# diy-part2.sh - 按需追加配置脚本
+# 在 make defconfig 生成的种子配置基础上追加必要选项
+# =====================================================================
 
 set -e
 
-echo ">>> 添加 xiguapi-v3 设备定义到 armv8.mk ..."
-TARGET_MK="target/linux/rockchip/image/armv8.mk"
-if [ -f "$TARGET_MK" ]; then
-    # 检查是否已经添加过，避免重复
-    if ! grep -q "nlnet_xiguapi-v3" "$TARGET_MK"; then
-        cat >> "$TARGET_MK" << 'EOF'
+OPENWRT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/openwrt" && pwd 2>/dev/null)"
+[ -z "$OPENWRT_DIR" ] && OPENWRT_DIR="${OPENWRT_DIR:-openwrt}"
 
-define Device/nlnet_xiguapi-v3
-  $(Device/rk3568)
-  DEVICE_VENDOR := NLnet
-  DEVICE_MODEL := XiGuaPi V3
-  DEVICE_PACKAGES := kmod-hwmon-pwmfan kmod-input-adc-keys kmod-saradc-rockchip
-endef
-TARGET_DEVICES += nlnet_xiguapi-v3
-EOF
-        echo "✅ 已添加 xiguapi-v3 设备定义"
-    else
-        echo "⚠️ 设备定义已存在，跳过"
+echo "=== 执行 diy-part2.sh ==="
+cd "$OPENWRT_DIR" || exit 1
+
+# =====================================================================
+# 辅助函数
+# =====================================================================
+
+# 安全追加配置（避免重复）
+add_config() {
+    local key="$1"
+    local value="$2"
+    if ! grep -q "^${key}=" .config 2>/dev/null; then
+        echo "${key}=${value}" >> .config
     fi
-else
-    echo "❌ 找不到 $TARGET_MK，请检查路径"
-    exit 1
-fi
+}
 
-echo ">>> 应用 xgp.config 中的配置项 ..."
-if [ -f "$GITHUB_WORKSPACE/xgp.config" ]; then
-    cp "$GITHUB_WORKSPACE/xgp.config" .config
-else
-    echo "⚠️ 未找到 xgp.config，将使用当前 .config 并手动追加关键项"
-fi
+# 安全禁用配置
+disable_config() {
+    local key="$1"
+    # 注释掉已启用的
+    sed -i "s/^${key}=/# #${key} is not set #/g" .config 2>/dev/null || true
+    # 添加 not set
+    if ! grep -q "^# ${key} is not set" .config 2>/dev/null; then
+        echo "# ${key} is not set" >> .config
+    fi
+}
 
-# 强制选中目标设备
-echo "CONFIG_TARGET_rockchip=y" >> .config
-echo "CONFIG_TARGET_rockchip_armv8=y" >> .config
-echo "CONFIG_TARGET_DEVICE_rockchip_armv8_DEVICE_nlnet_xiguapi-v3=y" >> .config
+# =====================================================================
+# 目标设备和架构
+# =====================================================================
+echo ">>> 配置目标设备..."
 
-# 追加必要的内核模块（来源于 xgp.config 和你的硬件需求）
-# 注意：这里只添加关键项，避免过多冗余
-cat >> .config << 'EOF'
-# 有线网卡驱动
-CONFIG_PACKAGE_kmod-r8125=y
-CONFIG_PACKAGE_kmod-igc=y
+add_config "CONFIG_TARGET_rockchip" "y"
+add_config "CONFIG_TARGET_rockchip_armv8" "y"
+add_config "CONFIG_TARGET_MULT_PROFILE" "y"
+add_config "CONFIG_TARGET_DEVICE_rockchip_armv8_DEVICE_nlnet_xiguapi-v3" "y"
+add_config "CONFIG_DTB_nlnet_xiguapi-v3" "y"
 
-# WiFi驱动 (MT7915E + MT7603E)
-CONFIG_PACKAGE_kmod-mt7915e=y
-CONFIG_PACKAGE_kmod-mt7603e=y
+# =====================================================================
+# 5G MHI 驱动（高通方案）
+# =====================================================================
+echo ">>> 配置 5G MHI 驱动..."
 
-# USB 和 PCIe 基础
-CONFIG_PACKAGE_kmod-usb3=y
-CONFIG_PACKAGE_kmod-usb-storage=y
-CONFIG_PACKAGE_kmod-usb-net=y
-CONFIG_PACKAGE_kmod-pcie-bus=y
+add_config "CONFIG_KMOD_MHI_PCI_GENERIC" "y"
+add_config "CONFIG_KMOD_MHI_PCI_QCOM_GEN" "y"
 
-# 显示和屏幕（如果有屏幕驱动）
-# CONFIG_PACKAGE_kmod-drm=y
-# CONFIG_PACKAGE_kmod-fb=y
+# =====================================================================
+# USB 调制解调器
+# =====================================================================
+echo ">>> 配置 USB 调制解调器..."
 
-# 文件系统
-CONFIG_PACKAGE_kmod-fs-ext4=y
-CONFIG_PACKAGE_kmod-fs-vfat=y
-CONFIG_PACKAGE_kmod-fs-ntfs=y
-CONFIG_PACKAGE_kmod-fuse=y
+add_config "CONFIG_KMOD_USB_NET_QMI_WWAN" "y"
+add_config "CONFIG_KMOD_USB_NET_CDC_MBIM" "y"
+add_config "CONFIG_KMOD_USB_NET_RNDIS_HOST" "y"
+add_config "CONFIG_KMOD_USB_NET_CDC_NCM" "y"
+add_config "CONFIG_KMOD_USB_NET_CDC_ETHER" "y"
 
-# 常用工具
-CONFIG_PACKAGE_luci=y
-CONFIG_PACKAGE_luci-app-store=y
-CONFIG_PACKAGE_iStore=y
-CONFIG_PACKAGE_openssh-sftp-server=y
-CONFIG_PACKAGE_block-mount=y
-CONFIG_PACKAGE_kmod-ata-core=y
-CONFIG_PACKAGE_kmod-ata-ahci=y
-EOF
+# =====================================================================
+# RK3568 GPIO / ADC
+# =====================================================================
+echo ">>> 配置 RK3568 GPIO/ADC..."
 
-# 应用 LAN IP 和系统名称（Workflow 会用 sed 直接改文件，这里也可以做）
-# 已经在 Workflow 中设置，这里略过
+add_config "CONFIG_KMOD_INPUT_ADC_KEYS" "y"
+add_config "CONFIG_SARADC" "y"
+add_config "CONFIG_KMOD_SARADC_ROCKCHIP" "y"
+add_config "CONFIG_KMOD_HWMON_PWMFAN" "y"
+add_config "CONFIG_HWMON" "y"
 
-echo "✅ diy-part2.sh 执行完毕"
+# =====================================================================
+# 屏幕驱动 (GC9307)
+# =====================================================================
+echo ">>> 配置屏幕驱动..."
+
+add_config "CONFIG_KMOD_XGP_V3_SCREEN" "m"
+
+# =====================================================================
+# USB OTG / Type-C
+# =====================================================================
+echo ">>> 配置 USB OTG..."
+
+add_config "CONFIG_USB_ROLE_SWITCH" "y"
+add_config "CONFIG_TYPEC" "y"
+add_config "CONFIG_TYPEC_RT1711S" "y"
+add_config "CONFIG_USB_GADGET" "y"
+add_config "CONFIG_USB_CONFIGFS" "y"
+
+# =====================================================================
+# PCIe (5G 模组)
+# =====================================================================
+echo ">>> 配置 PCIe..."
+
+add_config "CONFIG_PCIE_ROCKCHIP" "y"
+add_config "CONFIG_PCI" "y"
+add_config "CONFIG_PCI_MSI" "y"
+
+# =====================================================================
+# 网络配置
+# =====================================================================
+echo ">>> 配置网络..."
+
+add_config "CONFIG_IPV6" "y"
+add_config "CONFIG_BRIDGE" "y"
+add_config "CONFIG_NET_IPIP" "y"
+add_config "CONFIG_NET_IPGRE" "y"
+add_config "CONFIG_NET_IPVTI" "y"
+
+# =====================================================================
+# LuCI - 调制解调器管理
+# =====================================================================
+echo ">>> 配置 LuCI 应用..."
+
+add_config "CONFIG_PACKAGE_luci-proto-modemmanager" "y"
+add_config "CONFIG_PACKAGE_luci-app-modemmanager" "y"
+add_config "CONFIG_PACKAGE_luci-proto-qmi" "y"
+add_config "CONFIG_PACKAGE_luci-proto-ncm" "y"
+add_config "CONFIG_PACKAGE_luci-proto-ppp" "y"
+
+# =====================================================================
+# QMI 工具
+# =====================================================================
+echo ">>> 配置 QMI 工具..."
+
+add_config "CONFIG_PACKAGE_qmi-utils" "y"
+add_config "CONFIG_PACKAGE_umbim" "y"
+add_config "CONFIG_PACKAGE_atinout" "y"
+
+# =====================================================================
+# USB 工具
+# =====================================================================
+echo ">>> 配置 USB 工具..."
+
+add_config "CONFIG_PACKAGE_usbmuxd" "y"
+add_config "CONFIG_PACKAGE_usbutils" "y"
+add_config "CONFIG_PACKAGE_kmod-usb-storage" "y"
+add_config "CONFIG_PACKAGE_kmod-usb-storage-expert" "y"
+
+# =====================================================================
+# 存储支持
+# =====================================================================
+echo ">>> 配置存储..."
+
+add_config "CONFIG_KMOD_SATA_AHCI_ROCKCHIP" "y"
+add_config "CONFIG_KMOD_SDHC" "y"
+add_config "CONFIG_KMOD_MMC" "y"
+add_config "CONFIG_KMOD_SCSI" "y"
+
+# =====================================================================
+# 内核构建信息
+# =====================================================================
+add_config "CONFIG_KERNEL_BUILD_USER" "guangay"
+add_config "CONFIG_KERNEL_BUILD_DOMAIN" "GitHub-Actions"
+
+# =====================================================================
+# 生成完整配置
+# =====================================================================
+echo ">>> 验证配置..."
+make defconfig 2>/dev/null || true
+
+echo "=== diy-part2.sh 完成 ==="
+echo "配置行数: $(wc -l < .config)"
+echo "设备配置: $(grep "DEVICE_nlnet_xiguapi-v3" .config | head -1)"
