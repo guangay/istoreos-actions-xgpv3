@@ -1,158 +1,172 @@
 #!/bin/bash
-#
-# Copyright (c) 2019-2020 P3TERX <https://p3terx.com>
-#
-# This is free software, licensed under the MIT License.
-# See /LICENSE for more information.
-#
-# https://github.com/P3TERX/Actions-OpenWrt
-# File name: diy-part2.sh
-# Description: OpenWrt DIY script part 2 (After Update feeds)
-#
+# =====================================================================
+# diy-part2.sh - 按需追加配置脚本
+# 在 make defconfig 生成的种子配置基础上追加必要选项
+# =====================================================================
 
-# =====================================================
-# 移除不需要的组件
-# =====================================================
+set -e
 
-# 移除 ddnsto（可选）
-sed -i 's/CONFIG_PACKAGE_ddnsto=y/# CONFIG_PACKAGE_ddnsto is not set/' .config
-sed -i 's/CONFIG_PACKAGE_luci-app-ddnsto=y/# CONFIG_PACKAGE_luci-app-ddnsto is not set/' .config
-sed -i 's/CONFIG_PACKAGE_luci-i18n-ddnsto-zh-cn=y/# CONFIG_PACKAGE_luci-i18n-ddnsto-zh-cn is not set/' .config
+OPENWRT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/openwrt" && pwd 2>/dev/null)"
+[ -z "$OPENWRT_DIR" ] && OPENWRT_DIR="${OPENWRT_DIR:-openwrt}"
 
-# 移除 bootstrap 主题
-sed -i 's/CONFIG_PACKAGE_luci-theme-bootstrap=y/# CONFIG_PACKAGE_luci-theme-bootstrap is not set/' .config
+echo "=== 执行 diy-part2.sh ==="
+cd "$OPENWRT_DIR" || exit 1
 
-# 删除 webdav2 (不需要)
-sed -i '/CONFIG_PACKAGE_webdav2/d' .config
-echo "✅ 已删除 webdav2 配置"
+# =====================================================================
+# 辅助函数
+# =====================================================================
 
-# =====================================================
-# 禁用 LCD/OLED 屏幕应用（使用 xgp-v3-screen 专用驱动）
-# =====================================================
-echo ">>> 禁用 lcdsimple 和 luci-app-oled..."
-
-# 禁用 lcdsimple
-sed -i 's/CONFIG_PACKAGE_lcdsimple=y/# CONFIG_PACKAGE_lcdsimple is not set/' .config
-if ! grep -q "^# CONFIG_PACKAGE_lcdsimple is not set" .config; then
-    echo "# CONFIG_PACKAGE_lcdsimple is not set" >> .config
-fi
-echo "CONFIG_PACKAGE_lcdsimple=n" >> .config
-
-# 禁用 luci-app-oled
-sed -i 's/CONFIG_PACKAGE_luci-app-oled=y/# CONFIG_PACKAGE_luci-app-oled is not set/' .config
-if ! grep -q "^# CONFIG_PACKAGE_luci-app-oled is not set" .config; then
-    echo "# CONFIG_PACKAGE_luci-app-oled is not set" >> .config
-fi
-echo "CONFIG_PACKAGE_luci-app-oled=n" >> .config
-
-echo "✅ 已禁用 lcdsimple 和 luci-app-oled"
-
-# =====================================================
-# 修复 RK3568 设备配置 (使用存在的设备作为基础)
-# =====================================================
-echo ">>> 修复 RK3568 设备配置..."
-
-# 由于 nlnet_xiguapi-v3 在 iStoreOS 中不存在，需要使用一个存在的设备
-# 这里使用 easepi_r1 作为基础设备（RK3568），然后通过设备树覆盖
-# 先注释掉不存在的设备
-sed -i 's/CONFIG_TARGET_DEVICE_rockchip_armv8_DEVICE_nlnet_xiguapi-v3=y/# CONFIG_TARGET_DEVICE_rockchip_armv8_DEVICE_nlnet_xiguapi-v3 is not set/' .config
-echo "# CONFIG_TARGET_DEVICE_rockchip_armv8_DEVICE_nlnet_xiguapi-v3 is not set" >> .config
-
-# 启用一个存在的 RK3568 设备作为基础 (easepi_r1)
-# 这样可以让构建系统正确处理 U-Boot 等依赖
-if ! grep -q "^CONFIG_TARGET_DEVICE_rockchip_armv8_DEVICE_easepi_r1=y" .config 2>/dev/null; then
-    echo "CONFIG_TARGET_DEVICE_rockchip_armv8_DEVICE_easepi_r1=y" >> .config
-fi
-
-echo "✅ 设备配置已修复 (使用 easepi_r1 作为基础)"
-
-# =====================================================
-# xgp-v3 追加配置
-# =====================================================
-
-# QModem 5G模组管理
-echo "
-# QModem 5G模组管理
-CONFIG_PACKAGE_luci-app-qmodem=y
-CONFIG_PACKAGE_luci-app-qmodem-sms=y
-CONFIG_PACKAGE_luci-app-qmodem-mwan=y
-CONFIG_PACKAGE_luci-app-qmodem-ttl=y
-" >> .config
-
-# xgp-v3 屏幕驱动
-echo "
-# xgp-v3 屏幕驱动
-CONFIG_PACKAGE_kmod-fb-tft=y
-CONFIG_PACKAGE_kmod-fb-tft-gc9307=y
-CONFIG_PACKAGE_xgp-v3-screen=y
-
-# 屏幕驱动依赖
-CONFIG_PACKAGE_libpthread=y
-CONFIG_PACKAGE_libstdcpp=y
-CONFIG_PACKAGE_python3=y
-" >> .config
-
-# 5G模组相关
-echo "
-# 5G模组短信插件
-CONFIG_PACKAGE_luci-app-sms-tool=y
-
-# 5G模组信息插件
-CONFIG_PACKAGE_sms-tool=y
-CONFIG_PACKAGE_luci-app-modem=y
-CONFIG_PACKAGE_kmod-qmi_wwan_q=y
-
-# 脚本拨号工具依赖
-CONFIG_PACKAGE_procps-ng=y
-CONFIG_PACKAGE_procps-ng-ps=y
-" >> .config
-
-# =====================================================
-# 修复 RK3568 U-Boot 包配置 (解决编译错误)
-# =====================================================
-echo ">>> 修复 U-Boot 包配置..."
-
-# 首先禁用 uboot-rk35xx 及其所有 variant (这个包是给 RK3528/RK3588 用的)
-# 使用最强力的禁用方式
-echo "# =====================================================" >> .config
-echo "# 强制禁用 uboot-rk35xx (RK3528/RK3588 设备用，不兼容 RK3568)" >> .config
-echo "# =====================================================" >> .config
-
-# 注释掉所有包含 uboot-rk35xx 的配置行
-sed -i '/CONFIG_PACKAGE_uboot-rk35xx/s/^/# /' .config
-sed -i '/CONFIG_PACKAGE_uboot-rockchip-easepi-rk3528/s/^/# /' .config
-
-# 禁用所有 uboot-rockchip 的 variant，只保留核心包
-# uboot-rockchip 核心包会使用默认的设备树配置
-sed -i '/^CONFIG_PACKAGE_uboot-rockchip-/s/^/# /' .config
-sed -i '/^CONFIG_PACKAGE_uboot-rockchip-easepi/s/^/# /' .config
-sed -i '/^CONFIG_PACKAGE_uboot-rockchip-fastrhino/s/^/# /' .config
-sed -i '/^CONFIG_PACKAGE_uboot-rockchip-friendlyarm/s/^/# /' .config
-sed -i '/^CONFIG_PACKAGE_uboot-rockchip-hinlink/s/^/# /' .config
-sed -i '/^CONFIG_PACKAGE_uboot-rockchip-lyt/s/^/# /' .config
-sed -i '/^CONFIG_PACKAGE_uboot-rockchip-radxa/s/^/# /' .config
-sed -i '/^CONFIG_PACKAGE_uboot-rockchip-xunlong/s/^/# /' .config
-
-# 确保启用 uboot-rockchip 核心包（不带任何 variant）
-if grep -q "^# CONFIG_PACKAGE_uboot-rockchip is not set" .config 2>/dev/null; then
-    sed -i 's/^# CONFIG_PACKAGE_uboot-rockchip is not set/CONFIG_PACKAGE_uboot-rockchip=y/' .config
-elif ! grep -q "^CONFIG_PACKAGE_uboot-rockchip=y" .config 2>/dev/null; then
-    echo "CONFIG_PACKAGE_uboot-rockchip=y" >> .config
-fi
-
-# 显式禁用所有已知的 variant
-for variant in easepi-rk3568 easepi-rk3528 easepi-r1 fastrhino friendlyarm hinlink lyt radxa xunlong; do
-    if ! grep -q "^# CONFIG_PACKAGE_uboot-rockchip-${variant} is not set" .config 2>/dev/null; then
-        echo "# CONFIG_PACKAGE_uboot-rockchip-${variant} is not set" >> .config
+# 安全追加配置（避免重复）
+add_config() {
+    local key="$1"
+    local value="$2"
+    if ! grep -q "^${key}=" .config 2>/dev/null; then
+        echo "${key}=${value}" >> .config
     fi
-done
+}
 
-echo "✅ U-Boot 配置完成 (仅启用 uboot-rockchip 核心包)"
+# 安全禁用配置
+disable_config() {
+    local key="$1"
+    # 注释掉已启用的
+    sed -i "s/^${key}=/# #${key} is not set #/g" .config 2>/dev/null || true
+    # 添加 not set
+    if ! grep -q "^# ${key} is not set" .config 2>/dev/null; then
+        echo "# ${key} is not set" >> .config
+    fi
+}
 
-echo "============================================"
-echo "✅ 编译配置完成!"
-echo "✅ 已添加: QModem + xgp-v3 屏幕驱动"
-echo "✅ 已禁用: webdav2 + lcdsimple + luci-app-oled"
-echo "✅ 已禁用: third_party (feeds.conf)"
-echo "✅ 已修复: U-Boot (uboot-rk35xx -> uboot-rockchip)"
-echo "============================================"
+# =====================================================================
+# 目标设备和架构
+# =====================================================================
+echo ">>> 配置目标设备..."
+
+add_config "CONFIG_TARGET_rockchip" "y"
+add_config "CONFIG_TARGET_rockchip_armv8" "y"
+add_config "CONFIG_TARGET_MULT_PROFILE" "y"
+add_config "CONFIG_TARGET_DEVICE_rockchip_armv8_DEVICE_nlnet_xiguapi-v3" "y"
+add_config "CONFIG_DTB_nlnet_xiguapi-v3" "y"
+
+# =====================================================================
+# 5G MHI 驱动（高通方案）
+# =====================================================================
+echo ">>> 配置 5G MHI 驱动..."
+
+add_config "CONFIG_KMOD_MHI_PCI_GENERIC" "y"
+add_config "CONFIG_KMOD_MHI_PCI_QCOM_GEN" "y"
+
+# =====================================================================
+# USB 调制解调器
+# =====================================================================
+echo ">>> 配置 USB 调制解调器..."
+
+add_config "CONFIG_KMOD_USB_NET_QMI_WWAN" "y"
+add_config "CONFIG_KMOD_USB_NET_CDC_MBIM" "y"
+add_config "CONFIG_KMOD_USB_NET_RNDIS_HOST" "y"
+add_config "CONFIG_KMOD_USB_NET_CDC_NCM" "y"
+add_config "CONFIG_KMOD_USB_NET_CDC_ETHER" "y"
+
+# =====================================================================
+# RK3568 GPIO / ADC
+# =====================================================================
+echo ">>> 配置 RK3568 GPIO/ADC..."
+
+add_config "CONFIG_KMOD_INPUT_ADC_KEYS" "y"
+add_config "CONFIG_SARADC" "y"
+add_config "CONFIG_KMOD_SARADC_ROCKCHIP" "y"
+add_config "CONFIG_KMOD_HWMON_PWMFAN" "y"
+add_config "CONFIG_HWMON" "y"
+
+# =====================================================================
+# 屏幕驱动 (GC9307)
+# =====================================================================
+echo ">>> 配置屏幕驱动..."
+
+add_config "CONFIG_KMOD_XGP_V3_SCREEN" "m"
+
+# =====================================================================
+# USB OTG / Type-C
+# =====================================================================
+echo ">>> 配置 USB OTG..."
+
+add_config "CONFIG_USB_ROLE_SWITCH" "y"
+add_config "CONFIG_TYPEC" "y"
+add_config "CONFIG_TYPEC_RT1711S" "y"
+add_config "CONFIG_USB_GADGET" "y"
+add_config "CONFIG_USB_CONFIGFS" "y"
+
+# =====================================================================
+# PCIe (5G 模组)
+# =====================================================================
+echo ">>> 配置 PCIe..."
+
+add_config "CONFIG_PCIE_ROCKCHIP" "y"
+add_config "CONFIG_PCI" "y"
+add_config "CONFIG_PCI_MSI" "y"
+
+# =====================================================================
+# 网络配置
+# =====================================================================
+echo ">>> 配置网络..."
+
+add_config "CONFIG_IPV6" "y"
+add_config "CONFIG_BRIDGE" "y"
+add_config "CONFIG_NET_IPIP" "y"
+add_config "CONFIG_NET_IPGRE" "y"
+add_config "CONFIG_NET_IPVTI" "y"
+
+# =====================================================================
+# LuCI - 调制解调器管理
+# =====================================================================
+echo ">>> 配置 LuCI 应用..."
+
+add_config "CONFIG_PACKAGE_luci-proto-modemmanager" "y"
+add_config "CONFIG_PACKAGE_luci-app-modemmanager" "y"
+add_config "CONFIG_PACKAGE_luci-proto-qmi" "y"
+add_config "CONFIG_PACKAGE_luci-proto-ncm" "y"
+add_config "CONFIG_PACKAGE_luci-proto-ppp" "y"
+
+# =====================================================================
+# QMI 工具
+# =====================================================================
+echo ">>> 配置 QMI 工具..."
+
+add_config "CONFIG_PACKAGE_qmi-utils" "y"
+add_config "CONFIG_PACKAGE_umbim" "y"
+add_config "CONFIG_PACKAGE_atinout" "y"
+
+# =====================================================================
+# USB 工具
+# =====================================================================
+echo ">>> 配置 USB 工具..."
+
+add_config "CONFIG_PACKAGE_usbmuxd" "y"
+add_config "CONFIG_PACKAGE_usbutils" "y"
+add_config "CONFIG_PACKAGE_kmod-usb-storage" "y"
+add_config "CONFIG_PACKAGE_kmod-usb-storage-expert" "y"
+
+# =====================================================================
+# 存储支持
+# =====================================================================
+echo ">>> 配置存储..."
+
+add_config "CONFIG_KMOD_SATA_AHCI_ROCKCHIP" "y"
+add_config "CONFIG_KMOD_SDHC" "y"
+add_config "CONFIG_KMOD_MMC" "y"
+add_config "CONFIG_KMOD_SCSI" "y"
+
+# =====================================================================
+# 内核构建信息
+# =====================================================================
+add_config "CONFIG_KERNEL_BUILD_USER" "guangay"
+add_config "CONFIG_KERNEL_BUILD_DOMAIN" "GitHub-Actions"
+
+# =====================================================================
+# 生成完整配置
+# =====================================================================
+echo ">>> 验证配置..."
+make defconfig 2>/dev/null || true
+
+echo "=== diy-part2.sh 完成 ==="
+echo "配置行数: $(wc -l < .config)"
+echo "设备配置: $(grep "DEVICE_nlnet_xiguapi-v3" .config | head -1)"

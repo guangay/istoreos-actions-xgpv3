@@ -1,28 +1,31 @@
 #!/bin/bash
-#
-# Copyright (c) 2019-2020 P3TERX <https://p3terx.com>
-#
-# This is free software, licensed under the MIT License.
-# See /LICENSE for more information.
-#
-# https://github.com/P3TERX/Actions-OpenWrt
-# File name: diy-part1.sh
-# Description: OpenWrt DIY script part 1 (Before Update feeds)
-#
+# =====================================================================
+# diy-part1.sh - 预编译脚本
+# 应用补丁、配置 feeds
+# =====================================================================
 
-# =====================================================
-# 禁用与 iStoreOS 24.10 不兼容的 feeds
-# =====================================================
-echo ">>> 禁用不兼容的 feeds..."
+echo "=== 执行 diy-part1.sh ==="
 
-if [ -f feeds.conf.default ]; then
-    # 禁用 third_party feed (Makefile 错误)
-    sed -i 's|^src-.*third_party|# src-third_party|' feeds.conf.default
-    
-    # 禁用 jjm2473_apps feed (Makefile 错误)
-    sed -i 's|^src-.*jjm2473_apps|# src-jjm2473_apps|' feeds.conf.default
-    
-    echo "✅ 已禁用 third_party 和 jjm2473_apps feeds"
+# 自动检测 openwrt 目录位置
+if [ -d "/workdir/openwrt" ]; then
+    OPENWRT_DIR="/workdir/openwrt"
+elif [ -d "$GITHUB_WORKSPACE/openwrt" ]; then
+    OPENWRT_DIR="$GITHUB_WORKSPACE/openwrt"
+elif [ -d "$(dirname "${BASH_SOURCE[0]}")/openwrt" ]; then
+    OPENWRT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/openwrt"
+else
+    OPENWRT_DIR="openwrt"
 fi
 
-echo ">>> diy-part1.sh 完成"
+echo "检测到 openwrt 目录: $OPENWRT_DIR"
+
+# 复制 feeds 配置
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+if [ -f "$SCRIPT_DIR/feeds.conf" ]; then
+    cp "$SCRIPT_DIR/feeds.conf" "$OPENWRT_DIR/feeds.conf.default"
+    echo "✅ feeds.conf 已复制"
+else
+    echo "⚠️ feeds.conf 不存在，跳过"
+fi
+
+echo "=== diy-part1.sh 完成 ==="
