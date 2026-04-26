@@ -1,5 +1,4 @@
 name: Build iStoreOS Firmware
-
 on:
   workflow_dispatch:
     inputs:
