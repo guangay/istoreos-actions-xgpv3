@@ -21,6 +21,55 @@ cd "$OPENWRT_DIR"
 echo "当前目录: $(pwd)"
 
 # =====================================================================
+# 修复 feeds 配置（如果 feeds.conf.default 不存在或 feeds 目录损坏）
+# =====================================================================
+echo ">>> 检查并修复 feeds 配置..."
+
+# 查找 feeds.conf 的可能位置
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+FEEDS_CONF=""
+for path in \
+    "$SCRIPT_DIR/rk35xx-24.10/feeds.conf" \
+    "$SCRIPT_DIR/feeds.conf" \
+    "$SCRIPT_DIR/../rk35xx-24.10/feeds.conf"; do
+    if [ -f "$path" ]; then
+        FEEDS_CONF="$path"
+        break
+    fi
+done
+
+# 如果 feeds.conf.default 不存在或 feeds 目录损坏，强制重新配置
+if [ ! -f "feeds.conf.default" ] || [ ! -d "feeds/base" ]; then
+    echo "⚠️ feeds 配置损坏或缺失，强制重新配置..."
+    
+    # 清理旧的 feeds
+    rm -rf feeds feeds.conf.default
+    
+    # 复制 feeds.conf
+    if [ -n "$FEEDS_CONF" ]; then
+        cp "$FEEDS_CONF" feeds.conf.default
+        echo "✅ 已复制 feeds.conf (来源: $FEEDS_CONF)"
+    else
+        # 使用默认的 feeds 配置
+        cat > feeds.conf.default << 'EOF'
+src-git base https://github.com/istoreos/istoreos.git;istoreos-24.10
+src-git packages https://github.com/istoreos/istoreos.git;istoreos-24.10
+src-git luci https://github.com/istoreos/istoreos.git;istoreos-24.10
+src-git routing https://github.com/openwrt/routing.git;openwrt-23.05
+src-git telephony https://github.com/openwrt/telephony.git;openwrt-23.05
+EOF
+        echo "✅ 已创建默认 feeds.conf.default"
+    fi
+    
+    # 更新 feeds
+    ./scripts/feeds update -a
+    ./scripts/feeds install -a
+    echo "✅ feeds 已重新安装"
+else
+    echo "✅ feeds 配置正常"
+fi
+
+# =====================================================================
 # 辅助函数
 # =====================================================================
 
