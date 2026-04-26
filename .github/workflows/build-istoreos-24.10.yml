@@ -113,19 +113,7 @@ jobs:
           chmod +x $GITHUB_WORKSPACE/$DIY_P1_SH
           ./$DIY_P1_SH || true
 
-      - name: 应用补丁
-        run: |
-          cd openwrt
-          # 确保补丁目标目录存在
-          mkdir -p target/linux/rockchip/image/
-          # 应用设备定义补丁（追加到 image.mk）
-          patch -p1 < ../user-repo/999-add-xgpv3-support.patch || {
-            echo "⚠️ xgpv3-support.patch 应用失败，尝试手动追加..."
-            cat ../user-repo/999-add-xgpv3-support.patch | grep -v "^---" | grep -v "^+++" | grep -v "^@@" >> target/linux/rockchip/image.mk
-          }
-          # 应用 TD-TECH USB 驱动补丁
-          patch -p1 < ../user-repo/999-add-TD-TECH-option-id.patch || true
-          echo "✅ 补丁已应用"
+      # 补丁步骤已移除 - 设备定义改在 diy-part2.sh 中通过脚本添加
 
       - name: 更新 feeds
         run: |
