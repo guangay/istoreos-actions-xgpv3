@@ -22,7 +22,7 @@ env:
   REPO_URL: https://github.com/istoreos/istoreos
   REPO_BRANCH: istoreos-24.10
   USER_REPO_URL: https://github.com/guangay/istoreos-actions-xgpv3
-  DEVICE_NAME: nlnet_xiguapi-v3
+  DEVICE_NAME: nlnet_xgpv3
   DEVICE_TREE: rk3568-xiguapi-v3
   DIY_P1_SH: diy-part1.sh
   DIY_P2_SH: diy-part2.sh
@@ -98,35 +98,43 @@ jobs:
         uses: klever1988/cachewrtbuild@main
         with:
           ccache: 'true'
-          mixkey: ${{ env.REPO_BRANCH }}-${{ env.DEVICE_NAME }}
+          mix_key: ${{ env.REPO_BRANCH }}-${{ env.DEVICE_NAME }}
           prefix: ${{ github.workspace }}/openwrt
 
       # =================================================================
-      # Feeds 配置
+      # Feeds 配置（按 immortalwrt 官方规范：只保留官方源）
       # =================================================================
-      - name: 加载 feeds 配置
+      - name: 配置 feeds（官方源，无第三方）
         run: |
           cd openwrt
-          # 复制 feeds 配置
-          [ -e ../user-repo/rk35xx-24.10/feeds.conf ] && cp ../user-repo/rk35xx-24.10/feeds.conf ./feeds.conf.default
-          sed -i '/src-include.*feeds.conf.default/d' ./feeds.conf.default
+          
+          # 清理旧 feeds
+          rm -rf feeds
+          
+          # 复制 feeds 配置（只保留官方源，无第三方）
+          if [ -e ../user-repo/rk35xx-24.10/feeds.conf ]; then
+            cp ../user-repo/rk35xx-24.10/feeds.conf ./feeds.conf.default
+            echo "✅ 使用用户仓库的 feeds.conf"
+          else
+            # 使用内联官方配置（无第三方）
+            cat > feeds.conf.default << 'EOF'
+src-git base https://github.com/istoreos/istoreos.git;istoreos-24.10
+src-git packages https://github.com/istoreos/istoreos.git;istoreos-24.10
+src-git luci https://github.com/istoreos/istoreos.git;istoreos-24.10
+src-git routing https://github.com/openwrt/routing.git;openwrt-23.05
+src-git telephony https://github.com/openwrt/telephony.git;openwrt-23.05
+EOF
+            echo "✅ 使用内联官方 feeds.conf（无第三方）"
+          fi
+          
           chmod +x $GITHUB_WORKSPACE/$DIY_P1_SH
-          $GITHUB_WORKSPACE/$DIY_P1_SH || true   # ← 修复：使用绝对路径
+          $GITHUB_WORKSPACE/$DIY_P1_SH || true
 
       - name: 更新 feeds
         run: |
           cd openwrt
-          # 清理旧 feeds，强制重新下载
-          rm -rf feeds
           ./scripts/feeds update -a
           echo "✅ feeds 已更新"
-
-      - name: 克隆屏幕驱动
-        run: |
-          cd openwrt
-          rm -rf package/xgp-v3-screen
-          git clone --depth 1 https://github.com/junhong-l/xgp-v3-screen.git package/xgp-v3-screen
-          echo "✅ xgp_screen 屏幕驱动已安装"
 
       - name: 安装 feeds
         run: |
@@ -144,10 +152,55 @@ jobs:
           [ -e ../user-repo/files ] && cp -r ../user-repo/files .
           echo "✅ files 目录已复制"
 
+      - name: 复制设备树文件
+        run: |
+          cd openwrt
+          echo "=== 复制设备树文件 ==="
+          DTS_SOURCE="${GITHUB_WORKSPACE}/user-repo/target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/${DEVICE_TREE}.dts"
+          
+          if [ -f "$DTS_SOURCE" ]; then
+            mkdir -p target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/
+            cp -f "$DTS_SOURCE" target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/
+            # 同时复制到 uboot 目录
+            mkdir -p package/boot/uboot-rockchip/files/arch/arm64/boot/dts/rockchip/
+            cp -f "$DTS_SOURCE" package/boot/uboot-rockchip/files/arch/arm64/boot/dts/rockchip/
+            echo "✅ 设备树复制成功: $DTS_SOURCE"
+          else
+            echo "⚠️ 设备树文件不存在: $DTS_SOURCE"
+            ls -la ../user-repo/target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/ 2>/dev/null || echo "目录不存在"
+          fi
+
+      - name: 复制 armv8.mk
+        run: |
+          cd openwrt
+          echo "=== 复制 armv8.mk ==="
+          # armv8.mk 在 image/ 子目录下
+          ARMV8_SOURCE="${GITHUB_WORKSPACE}/user-repo/target/linux/rockchip/image/armv8.mk"
+          
+          if [ -f "$ARMV8_SOURCE" ]; then
+            mkdir -p target/linux/rockchip/
+            cp -f "$ARMV8_SOURCE" target/linux/rockchip/armv8.mk
+            echo "✅ armv8.mk 复制成功"
+          else
+            echo "⚠️ armv8.mk 不存在于用户仓库，跳过（使用上游默认）"
+          fi
+
+      - name: 应用补丁
+        run: |
+          cd openwrt
+          echo "=== 应用补丁 ==="
+          PATCH_SOURCE="${GITHUB_WORKSPACE}/user-repo/999-add-TD-TECH-option-id.patch"
+          
+          if [ -f "$PATCH_SOURCE" ]; then
+            patch -p1 -i "$PATCH_SOURCE" || echo "⚠️ 补丁应用失败，继续..."
+            echo "✅ 补丁已应用"
+          else
+            echo "⚠️ 补丁文件不存在: $PATCH_SOURCE"
+          fi
+
       - name: 生成种子配置
         run: |
           cd openwrt
-          # 使用内核默认配置作为种子，避免覆盖冲突
           make defconfig
           echo "✅ 种子配置已生成 ($(wc -l < .config) 行)"
 
@@ -155,33 +208,16 @@ jobs:
         run: |
           cd openwrt
           chmod +x $GITHUB_WORKSPACE/$DIY_P2_SH
-          $GITHUB_WORKSPACE/$DIY_P2_SH   # ← 修复：使用绝对路径
+          $GITHUB_WORKSPACE/$DIY_P2_SH
           echo "✅ 按需配置已追加"
-
-      - name: 验证设备配置
-        run: |
-          cd openwrt
-          echo "=== 验证设备配置 ==="
-          # 检查目标设备是否设置
-          if grep -Fxq "CONFIG_TARGET_DEVICE_rockchip_armv8_DEVICE_nlnet_xiguapi-v3=y" .config 2>/dev/null; then
-            echo "✅ 设备配置已启用"
-          else
-            echo "⚠️ 设备配置未找到，添加..."
-            echo "CONFIG_TARGET_DEVICE_rockchip_armv8_DEVICE_nlnet_xiguapi-v3=y" >> .config
-            make defconfig
-          fi
-          grep "DEVICE_nlnet_xiguapi-v3" .config || true
 
       - name: 禁用 webdav2
         run: |
           cd openwrt
-          echo "=== 禁用 webdav2 ==="
-          # 禁用 webdav2（用 not set 而非删除，避免冲突）
           for pkg in webdav2 luci-app-webdav2; do
             sed -i "s/^CONFIG_PACKAGE_${pkg}=.*/# CONFIG_PACKAGE_${pkg} is not set/" .config
-            echo "# CONFIG_PACKAGE_${pkg} is not set" >> .config
           done
-          rm -rf package/feeds/*/webdav2 package/feeds/*/luci-app-webdav2 2>/dev/null || true
+          rm -rf package/feeds/*/webdav2 2>/dev/null || true
           echo "✅ 已禁用 webdav2"
 
       - name: 设置 LAN IP 地址
@@ -205,23 +241,6 @@ jobs:
       # =================================================================
       # 下载与编译
       # =================================================================
-      - name: 复制设备树文件
-        run: |
-          cd openwrt
-          echo "=== 复制设备树文件 ==="
-          DTS_SOURCE="${GITHUB_WORKSPACE}/user-repo/target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/${DEVICE_TREE}.dts"
-
-          if [ -f "$DTS_SOURCE" ]; then
-            mkdir -p target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/
-            cp -f "$DTS_SOURCE" target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/
-            mkdir -p package/boot/uboot-rockchip/files/arch/arm64/boot/dts/rockchip/
-            cp -f "$DTS_SOURCE" package/boot/uboot-rockchip/files/arch/arm64/boot/dts/rockchip/
-            echo "✅ 设备树复制成功!"
-          else
-            echo "⚠️ 警告: 设备树文件不存在"
-            find ${GITHUB_WORKSPACE}/user-repo -name "*.dts*" 2>/dev/null | head -5
-          fi
-
       - name: 下载软件包
         id: package
         run: |
@@ -240,7 +259,7 @@ jobs:
           cd openwrt
           echo "=== 编译前最终检查设备配置 ==="
           
-          # 确保基础目标配置存在（Rockchip ARMv8）
+          # 确保基础目标配置存在
           if ! grep -q "^CONFIG_TARGET_rockchip=y" .config 2>/dev/null; then
             echo "CONFIG_TARGET_rockchip=y" >> .config
             echo "✅ 已添加 CONFIG_TARGET_rockchip"
@@ -251,21 +270,17 @@ jobs:
             echo "✅ 已添加 CONFIG_TARGET_rockchip_armv8"
           fi
           
-          # 确保多配置文件支持
           if ! grep -q "^CONFIG_TARGET_MULTI_PROFILE=y" .config 2>/dev/null; then
             echo "CONFIG_TARGET_MULTI_PROFILE=y" >> .config
             echo "✅ 已添加 CONFIG_TARGET_MULTI_PROFILE"
           fi
           
-          # 强制确保设备配置存在（防止被后续操作覆盖）
-          DEVICE_CONFIG="CONFIG_TARGET_DEVICE_rockchip_armv8_DEVICE_nlnet_xiguapi-v3=y"
+          # 强制确保设备配置存在
+          DEVICE_CONFIG="CONFIG_TARGET_DEVICE_rockchip_armv8_DEVICE_nlnet_xgpv3=y"
           if ! grep -q "^${DEVICE_CONFIG}" .config 2>/dev/null; then
             echo "⚠️ 设备配置丢失，重新添加..."
             echo "$DEVICE_CONFIG" >> .config
           fi
-          
-          # 移除冲突配置（如果有）
-          sed -i 's/^# CONFIG_TARGET_DEVICE.*is not set//' .config 2>/dev/null || true
           
           echo ">>> 执行 make defconfig..."
           make defconfig
@@ -275,7 +290,6 @@ jobs:
             echo "✅ 设备配置检查通过"
           else
             echo "❌ 设备配置检查失败!"
-            echo ">>> 当前 .config 中的设备相关配置:"
             grep "CONFIG_TARGET_DEVICE" .config || echo "无"
             exit 1
           fi
@@ -293,12 +307,13 @@ jobs:
           echo "固件版本: $VERSION"
 
           # 精确的设备配置检查
-          echo "=== 设备配置检查 ==="
-          if ! grep -Fxq "CONFIG_TARGET_DEVICE_rockchip_armv8_DEVICE_nlnet_xiguapi-v3=y" .config; then
+          echo "=== 设备配置最终确认 ==="
+          if grep -q "^CONFIG_TARGET_DEVICE_rockchip_armv8_DEVICE_nlnet_xgpv3=y" .config; then
+            echo "✅ 设备配置确认通过"
+          else
             echo "❌ 错误: 设备配置未启用!"
             exit 1
           fi
-          echo "✅ 设备配置检查通过"
 
           echo "使用 $(nproc) 线程编译"
 
