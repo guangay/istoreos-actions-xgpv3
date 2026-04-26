@@ -233,6 +233,27 @@ jobs:
           find dl -size -1024c -exec rm -f {} \; 2>/dev/null || true
 
       # =================================================================
+      # 编译前最终检查
+      # =================================================================
+      - name: 编译前最终检查设备配置
+        run: |
+          cd openwrt
+          echo "=== 编译前最终检查设备配置 ==="
+          # 强制确保设备配置存在（防止被后续操作覆盖）
+          if ! grep -q "CONFIG_TARGET_DEVICE_rockchip_armv8_DEVICE_nlnet_xiguapi-v3=y" .config 2>/dev/null; then
+            echo "⚠️ 设备配置丢失，重新添加..."
+            echo "CONFIG_TARGET_DEVICE_rockchip_armv8_DEVICE_nlnet_xiguapi-v3=y" >> .config
+          fi
+          make defconfig
+          # 验证配置
+          if grep -q "CONFIG_TARGET_DEVICE_rockchip_armv8_DEVICE_nlnet_xiguapi-v3=y" .config; then
+            echo "✅ 设备配置检查通过"
+          else
+            echo "❌ 设备配置检查失败!"
+            exit 1
+          fi
+
+      # =================================================================
       # 编译
       # =================================================================
       - name: 编译固件
