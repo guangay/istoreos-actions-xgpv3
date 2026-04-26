@@ -26,7 +26,7 @@ env:
   DEVICE_TREE: rk3568-xiguapi-v3
   DIY_P1_SH: diy-part1.sh
   DIY_P2_SH: diy-part2.sh
-  UPLOAD_FIRMWARE: 'true'
+  UPLOAD_FIRMWARE: true
   TZ: Asia/Shanghai
 
 jobs:
@@ -71,7 +71,7 @@ jobs:
             rsync sassc screen unzip vim wget xxd xz-utils zip zlib1g-dev
 
           sudo mkdir -p /workdir
-          sudo chown runner:runner /workdir
+          sudo chown $USER:$GROUPS /workdir
 
       # =================================================================
       # 克隆仓库
@@ -128,7 +128,7 @@ EOF
           fi
           
           chmod +x ${{ github.workspace }}/$DIY_P1_SH
-          ${{ github.workspace }}/$DIY_P1_SH || true
+          $GITHUB_WORKSPACE/$DIY_P1_SH || true
 
       - name: 更新 feeds
         run: |
@@ -156,7 +156,7 @@ EOF
         run: |
           cd openwrt
           echo "=== 复制设备树文件 ==="
-          DTS_SOURCE="${{ github.workspace }}/user-repo/target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/${DEVICE_TREE}.dts"
+          DTS_SOURCE="${GITHUB_WORKSPACE}/user-repo/target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/${DEVICE_TREE}.dts"
           
           if [ -f "$DTS_SOURCE" ]; then
             mkdir -p target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/
@@ -174,7 +174,8 @@ EOF
         run: |
           cd openwrt
           echo "=== 复制 armv8.mk ==="
-          ARMV8_SOURCE="${{ github.workspace }}/user-repo/target/linux/rockchip/image/armv8.mk"
+          # armv8.mk 在 image/ 子目录下
+          ARMV8_SOURCE="${GITHUB_WORKSPACE}/user-repo/target/linux/rockchip/image/armv8.mk"
           
           if [ -f "$ARMV8_SOURCE" ]; then
             mkdir -p target/linux/rockchip/
@@ -188,7 +189,7 @@ EOF
         run: |
           cd openwrt
           echo "=== 应用补丁 ==="
-          PATCH_SOURCE="${{ github.workspace }}/user-repo/999-add-TD-TECH-option-id.patch"
+          PATCH_SOURCE="${GITHUB_WORKSPACE}/user-repo/999-add-TD-TECH-option-id.patch"
           
           if [ -f "$PATCH_SOURCE" ]; then
             patch -p1 -i "$PATCH_SOURCE" || echo "⚠️ 补丁应用失败，继续..."
@@ -207,7 +208,7 @@ EOF
         run: |
           cd openwrt
           chmod +x ${{ github.workspace }}/$DIY_P2_SH
-          ${{ github.workspace }}/$DIY_P2_SH
+          $GITHUB_WORKSPACE/$DIY_P2_SH
           echo "✅ 按需配置已追加"
 
       - name: 禁用 webdav2
