@@ -239,17 +239,44 @@ jobs:
         run: |
           cd openwrt
           echo "=== 编译前最终检查设备配置 ==="
-          # 强制确保设备配置存在（防止被后续操作覆盖）
-          if ! grep -q "CONFIG_TARGET_DEVICE_rockchip_armv8_DEVICE_nlnet_xiguapi-v3=y" .config 2>/dev/null; then
-            echo "⚠️ 设备配置丢失，重新添加..."
-            echo "CONFIG_TARGET_DEVICE_rockchip_armv8_DEVICE_nlnet_xiguapi-v3=y" >> .config
+          
+          # 确保基础目标配置存在（Rockchip ARMv8）
+          if ! grep -q "^CONFIG_TARGET_rockchip=y" .config 2>/dev/null; then
+            echo "CONFIG_TARGET_rockchip=y" >> .config
+            echo "✅ 已添加 CONFIG_TARGET_rockchip"
           fi
+          
+          if ! grep -q "^CONFIG_TARGET_rockchip_armv8=y" .config 2>/dev/null; then
+            echo "CONFIG_TARGET_rockchip_armv8=y" >> .config
+            echo "✅ 已添加 CONFIG_TARGET_rockchip_armv8"
+          fi
+          
+          # 确保多配置文件支持
+          if ! grep -q "^CONFIG_TARGET_MULTI_PROFILE=y" .config 2>/dev/null; then
+            echo "CONFIG_TARGET_MULTI_PROFILE=y" >> .config
+            echo "✅ 已添加 CONFIG_TARGET_MULTI_PROFILE"
+          fi
+          
+          # 强制确保设备配置存在（防止被后续操作覆盖）
+          DEVICE_CONFIG="CONFIG_TARGET_DEVICE_rockchip_armv8_DEVICE_nlnet_xiguapi-v3=y"
+          if ! grep -q "^${DEVICE_CONFIG}" .config 2>/dev/null; then
+            echo "⚠️ 设备配置丢失，重新添加..."
+            echo "$DEVICE_CONFIG" >> .config
+          fi
+          
+          # 移除冲突配置（如果有）
+          sed -i 's/^# CONFIG_TARGET_DEVICE.*is not set//' .config 2>/dev/null || true
+          
+          echo ">>> 执行 make defconfig..."
           make defconfig
+          
           # 验证配置
-          if grep -q "CONFIG_TARGET_DEVICE_rockchip_armv8_DEVICE_nlnet_xiguapi-v3=y" .config; then
+          if grep -q "^${DEVICE_CONFIG}" .config; then
             echo "✅ 设备配置检查通过"
           else
             echo "❌ 设备配置检查失败!"
+            echo ">>> 当前 .config 中的设备相关配置:"
+            grep "CONFIG_TARGET_DEVICE" .config || echo "无"
             exit 1
           fi
 
