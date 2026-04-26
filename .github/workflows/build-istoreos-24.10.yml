@@ -85,11 +85,11 @@ jobs:
       - name: 克隆源码
         run: |
           sudo mkdir -p /workdir
-          sudo chown $USER:$GROUPS /workdir
+          sudo chown runner:runner /workdir
           cd /workdir
           df -hT $PWD
           git clone $REPO_URL -b $REPO_BRANCH openwrt
-          ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
+          ln -sf /workdir/openwrt "$GITHUB_WORKSPACE/openwrt"
 
       # =================================================================
       # 缓存
@@ -98,7 +98,7 @@ jobs:
         uses: klever1988/cachewrtbuild@main
         with:
           ccache: 'true'
-          mixkey: ${{ env.REPO_BRANCH }}-${{ env.DEVICE_NAME }}
+          mix_key: ${{ env.REPO_BRANCH }}-${{ env.DEVICE_NAME }}
           prefix: ${{ github.workspace }}/openwrt
 
       # =================================================================
@@ -127,7 +127,7 @@ EOF
             echo "✅ 使用内联官方 feeds.conf（无第三方）"
           fi
           
-          chmod +x $GITHUB_WORKSPACE/$DIY_P1_SH
+          chmod +x "$GITHUB_WORKSPACE/$DIY_P1_SH"
           $GITHUB_WORKSPACE/$DIY_P1_SH || true
 
       - name: 更新 feeds
@@ -207,7 +207,7 @@ EOF
       - name: 按需追加配置
         run: |
           cd openwrt
-          chmod +x $GITHUB_WORKSPACE/$DIY_P2_SH
+          chmod +x "$GITHUB_WORKSPACE/$DIY_P2_SH"
           $GITHUB_WORKSPACE/$DIY_P2_SH
           echo "✅ 按需配置已追加"
 
