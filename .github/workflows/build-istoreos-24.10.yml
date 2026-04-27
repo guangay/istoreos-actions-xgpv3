@@ -77,11 +77,24 @@ jobs:
         run: |
           git clone $MY_REPO -b $MY_BRANCH ${{ github.workspace }}/myfiles
 
-      - name: 复制设备树文件
+      - name: 复制设备树文件到内核目录
         run: |
           mkdir -p openwrt/target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/
           cp ${{ github.workspace }}/myfiles/target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/${{ env.DEVICE_TREE }} \
              openwrt/target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/
+
+      # ========== 关键修复：复制设备树到 U-Boot 目录 ==========
+      - name: 复制设备树文件到 uboot-rk35xx 目录
+        run: |
+          mkdir -p openwrt/package/boot/uboot-rk35xx/files/arch/arm/dts/rockchip/
+          cp ${{ github.workspace }}/myfiles/target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/${{ env.DEVICE_TREE }} \
+             openwrt/package/boot/uboot-rk35xx/files/arch/arm/dts/rockchip/
+
+      - name: 复制设备树文件到 uboot-rockchip 目录
+        run: |
+          mkdir -p openwrt/package/boot/uboot-rockchip/files/arch/arm/dts/rockchip/
+          cp ${{ github.workspace }}/myfiles/target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/${{ env.DEVICE_TREE }} \
+             openwrt/package/boot/uboot-rockchip/files/arch/arm/dts/rockchip/
 
       - name: 复制 armv8.mk
         run: |
@@ -125,10 +138,6 @@ jobs:
           chmod +x ${{ github.workspace }}/myfiles/diy-part2.sh
           cd openwrt
           ${{ github.workspace }}/myfiles/diy-part2.sh
-      - name: 修复 QModem 依赖警告
-        run: |
-          cd openwrt
-          sed -i 's/ +quectel-cm//g; s/ +quectel-CM-5G//g; s/ +kmod-mhi-wwan//g' package/feeds/qmodem/qmodem/Makefile      
 
       - name: 生成 .config
         run: cd openwrt && make defconfig
