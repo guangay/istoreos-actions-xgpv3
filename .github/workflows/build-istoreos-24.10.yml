@@ -77,17 +77,54 @@ jobs:
         run: |
           git clone $MY_REPO -b $MY_BRANCH ${{ github.workspace }}/myfiles
 
+      # ==================== 设备树复制及验证 ====================
       - name: 复制设备树到内核目录
         run: |
           mkdir -p openwrt/target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/
           cp ${{ github.workspace }}/myfiles/rk3568-xiguapi-v3.dts \
              openwrt/target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/
 
+      - name: 验证内核设备树已复制
+        run: |
+          TARGET_DTS="openwrt/target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/rk3568-xiguapi-v3.dts"
+          if [ -f "$TARGET_DTS" ] && [ -s "$TARGET_DTS" ]; then
+            echo "✅ 内核设备树复制成功: $TARGET_DTS"
+          else
+            echo "❌ 内核设备树复制失败或文件为空"
+            exit 1
+          fi
+
+      # ==================== armv8.mk 使用用户仓库版本 ====================
       - name: 复制 armv8.mk
         run: |
           cp ${{ github.workspace }}/myfiles/target/linux/rockchip/image/armv8.mk \
              openwrt/target/linux/rockchip/image/
 
+      - name: 验证 armv8.mk 来源且只包含目标设备
+        run: |
+          ARM_MK="openwrt/target/linux/rockchip/image/armv8.mk"
+          if [ ! -f "$ARM_MK" ]; then
+            echo "❌ armv8.mk 复制失败"
+            exit 1
+          fi
+          echo "=== armv8.mk 中的设备定义 ==="
+          grep -E "^define Device/|^TARGET_DEVICES" "$ARM_MK" || true
+          if grep -qi "easepi" "$ARM_MK"; then
+            echo "⚠️ 警告：armv8.mk 中仍包含 easepi 设备，请检查你的仓库文件"
+          else
+            echo "✅ armv8.mk 已清理，没有无关设备"
+          fi
+
+      - name: 调整 armv8.mk 确保目标设备启用
+        run: |
+          cd openwrt
+          sed -i '/nlnet_xiguapi-v3/s/^#//' target/linux/rockchip/image/armv8.mk
+          if ! grep -q "DEVICE_VARIANT := xiguapi-v3" target/linux/rockchip/image/armv8.mk; then
+            sed -i '/define Device\/nlnet_xiguapi-v3/a \  DEVICE_VARIANT := xiguapi-v3' target/linux/rockchip/image/armv8.mk
+          fi
+          echo "✅ armv8.mk 已调整"
+
+      # ==================== 补丁和应用 ====================
       - name: 应用补丁
         run: |
           cd openwrt
@@ -146,7 +183,7 @@ jobs:
           make download -j8
           find dl -size -1024c -delete
 
-      # 强制注入设备树到 U-Boot 源码（仅处理目标设备）
+      # ==================== U-Boot 设备树注入（含验证） ====================
       - name: 强制复制设备树到 U-Boot 源码树
         run: |
           cd openwrt
@@ -154,18 +191,37 @@ jobs:
           make package/boot/uboot-rockchip/prepare V=s || true
           DTS_SRC="${{ github.workspace }}/myfiles/rk3568-xiguapi-v3.dts"
           if [ ! -f "$DTS_SRC" ]; then
-            echo "错误：找不到设备树源文件 $DTS_SRC"
+            echo "❌ 错误：找不到设备树源文件 $DTS_SRC"
             exit 1
           fi
+          COPIED=0
           find build_dir -type d -path "*/u-boot-*/u-boot-*/arch/arm/dts" | while read dts_dir; do
             echo "处理 $dts_dir"
             cp "$DTS_SRC" "$dts_dir/"
+            if [ -f "$dts_dir/rk3568-xiguapi-v3.dts" ]; then
+              echo "✅ 成功复制到 $dts_dir"
+              COPIED=$((COPIED+1))
+            fi
             makefile="$dts_dir/Makefile"
             if [ -f "$makefile" ] && ! grep -q "rk3568-xiguapi-v3.dtb" "$makefile"; then
               sed -i '/^dtb-.*+=/a dtb-y += rk3568-xiguapi-v3.dtb' "$makefile"
-              echo "已修改 Makefile"
+              echo "✅ 已修改 Makefile"
             fi
           done
+          # 注意：COPIED 变量在子 shell 中无法传递，所以改用另一种方式验证
+          echo "=== 验证所有 U-Boot dts 目录中是否存在设备树 ==="
+          find build_dir -type f -path "*/rk3568-xiguapi-v3.dts" | wc -l
+
+      - name: 验证 U-Boot 设备树已注入
+        run: |
+          cd openwrt
+          count=$(find build_dir -type f -path "*/rk3568-xiguapi-v3.dts" | wc -l)
+          if [ "$count" -eq 0 ]; then
+            echo "❌ U-Boot 设备树注入失败：未找到任何 rk3568-xiguapi-v3.dts 文件"
+            exit 1
+          else
+            echo "✅ 成功注入 U-Boot 设备树，共找到 $count 个副本"
+          fi
 
       - name: 编译固件
         id: compile
