@@ -1,7 +1,7 @@
 #!/bin/bash
 # =====================================================================
-# diy-part2.sh - 配置目标设备、集成屏幕驱动和 QModem
-# 注意：设备树、armv8.mk、补丁已在 YML 中完成，本脚本不重复复制
+# diy-part2.sh - 配置目标设备、集成屏幕驱动、QModem 及其缺失依赖
+# 包含：内核 MHI 驱动支持、quectel-cm / quectel-CM-5G 克隆
 # =====================================================================
 
 echo "=== 执行 diy-part2.sh ==="
@@ -51,6 +51,16 @@ add_config CONFIG_TARGET_SUBTARGET "armv8"
 add_config CONFIG_TARGET_PROFILE "DEVICE_nlnet_xgpv3"
 
 # =====================================================================
+# 内核 MHI 驱动支持（解决 kmod-mhi-wwan 缺失）
+# =====================================================================
+echo ">>> 启用内核 MHI 总线驱动（用于 5G 模块）..."
+add_config CONFIG_MHI_BUS y
+add_config CONFIG_MHI_WWAN_CTRL y
+add_config CONFIG_MHI_WWAN_MBIM y
+add_config CONFIG_MHI_NET y
+add_config CONFIG_MHI_PCI_GENERIC y
+
+# =====================================================================
 # 屏幕驱动（xgp-v3-screen）
 # =====================================================================
 echo ">>> 配置屏幕驱动..."
@@ -70,9 +80,11 @@ else
 fi
 
 # =====================================================================
-# QModem 支持（4G/5G 模块管理）
+# QModem 和相关依赖（quectel-cm, quectel-CM-5G）
 # =====================================================================
-echo ">>> 配置 QModem..."
+echo ">>> 配置 QModem 及移远模块工具..."
+
+# 1. QModem 主程序
 QMODEM_LOCAL="$SCRIPT_DIR/QModem"
 QMODEM_PKG="package/QModem"
 
@@ -85,17 +97,43 @@ elif [ -d "$QMODEM_PKG" ]; then
 else
     git clone --depth 1 https://github.com/FUjr/QModem.git "$QMODEM_PKG"
     echo "✅ QModem 已克隆"
-    add_config CONFIG_PACKAGE_kmod-mhi-wwan y
-    add_config CONFIG_PACKAGE_quectel-CM-5G y
-    add_config CONFIG_PACKAGE_quectel-cm y
 fi
 
-# 添加 QModem 常用依赖包
+# 2. quectel-cm （移远 4G/5G 拨号工具）
+QUECTEL_CM_PKG="package/quectel-cm"
+if [ -d "$QUECTEL_CM_PKG" ]; then
+    echo "✅ quectel-cm 已存在"
+else
+    git clone --depth 1 https://github.com/kmilo17pet/quectel-cm.git "$QUECTEL_CM_PKG"
+    echo "✅ quectel-cm 已克隆"
+fi
+
+# 3. quectel-CM-5G （专门针对 5G 模块）
+QUECTEL_CM_5G_PKG="package/quectel-CM-5G"
+if [ -d "$QUECTEL_CM_5G_PKG" ]; then
+    echo "✅ quectel-CM-5G 已存在"
+else
+    # 注意：原 QModem 仓库可能包含该工具，此处直接软链接或复制
+    if [ -d "$QMODEM_PKG/quectel-CM-5G" ]; then
+        cp -r "$QMODEM_PKG/quectel-CM-5G" "$QUECTEL_CM_5G_PKG"
+        echo "✅ 从 QModem 复制 quectel-CM-5G"
+    else
+        # 备选：从其他仓库克隆（如果没有，则忽略）
+        echo "⚠️ 未找到 quectel-CM-5G 源，跳过"
+    fi
+fi
+
+# 添加配置选项（让它们在 .config 中生效）
+add_config CONFIG_PACKAGE_quectel-cm y
+add_config CONFIG_PACKAGE_quectel-CM-5G y
 add_config CONFIG_PACKAGE_qmi y
 add_config CONFIG_PACKAGE_uqmi y
 add_config CONFIG_PACKAGE_modemmanager y
 add_config CONFIG_PACKAGE_libqmi y
 add_config CONFIG_PACKAGE_libmbim y
+
+# 强制添加 QModem 自身的配置（如果它的 Makefile 定义了）
+add_config CONFIG_PACKAGE_QModem y
 
 # =====================================================================
 # 基本系统配置
@@ -114,4 +152,4 @@ if ! grep -q "^${DEVICE_CONFIG}" .config 2>/dev/null; then
     echo "$DEVICE_CONFIG" >> .config
 fi
 
-echo "✅ diy-part2.sh 执行完成"
+echo "✅ diy-part2.sh 执行完成（已添加 MHI 驱动、quectel 工具）"
