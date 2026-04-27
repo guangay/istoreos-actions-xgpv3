@@ -26,16 +26,15 @@ env:
   DIY_P2_SH: diy-part2.sh
   UPLOAD_FIRMWARE: true
   TZ: Asia/Shanghai
+  MY_REPO: https://github.com/guangay/istoreos-actions-xgpv3
+  MY_BRANCH: main
 
 jobs:
   build:
     runs-on: ubuntu-22.04
     timeout-minutes: 600
     steps:
-      - name: 检出仓库（包含自定义设备树、脚本、补丁）
-        uses: actions/checkout@v4
-
-      # 磁盘空间优化（省略，与之前相同，此处保留基本结构）
+      # 磁盘空间优化（保持不变）
       - name: 最大化构建空间
         uses: easimon/maximize-build-space@master
         with:
@@ -70,31 +69,28 @@ jobs:
           git clone $REPO_URL -b $REPO_BRANCH openwrt
           ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
 
-      - name: 缓存编译工具链及ccache
-        uses: klever1988/cachewrtbuild@main
-        with:
-          ccache: 'true'
-          mixkey: ${{ env.REPO_BRANCH }}-${{ env.DEVICE_NAME }}
-          prefix: ${{ github.workspace }}/openwrt
+      - name: 克隆您自己的仓库（包含设备树、补丁等）
+        run: |
+          git clone $MY_REPO -b $MY_BRANCH ${{ github.workspace }}/myfiles
 
-      # ========== 复制自定义文件（修正后的路径） ==========
-      - name: 复制设备树文件（修正路径）
+      # ========== 先复制所有自定义文件 ==========
+      - name: 复制设备树文件
         run: |
           mkdir -p openwrt/target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/
-          cp ${{ github.workspace }}/target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/${{ env.DEVICE_TREE }} \
+          cp ${{ github.workspace }}/myfiles/target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/${{ env.DEVICE_TREE }} \
              openwrt/target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/
 
       - name: 复制 armv8.mk
         run: |
-          cp ${{ github.workspace }}/target/linux/rockchip/image/armv8.mk \
+          cp ${{ github.workspace }}/myfiles/target/linux/rockchip/image/armv8.mk \
              openwrt/target/linux/rockchip/image/
 
       - name: 复制 feeds 配置并执行 diy-part1
         run: |
-          [ -e "$FEEDS_CONF" ] && cp "$FEEDS_CONF" openwrt/feeds.conf
-          chmod +x $DIY_P1_SH
+          [ -e "${{ github.workspace }}/myfiles/$FEEDS_CONF" ] && cp "${{ github.workspace }}/myfiles/$FEEDS_CONF" openwrt/feeds.conf
+          chmod +x ${{ github.workspace }}/myfiles/$DIY_P1_SH
           cd openwrt
-          $GITHUB_WORKSPACE/$DIY_P1_SH
+          ${{ github.workspace }}/myfiles/$DIY_P1_SH
 
       - name: 更新 feeds
         run: cd openwrt && ./scripts/feeds update -a
@@ -102,22 +98,29 @@ jobs:
       - name: 安装 feeds
         run: cd openwrt && ./scripts/feeds install -a
 
-      # ========== 应用补丁（根目录 + patches目录） ==========
-      - name: 应用自定义补丁
+      - name: 应用自定义补丁（根目录下的 .patch）
         run: |
           cd openwrt
-          for patch in $GITHUB_WORKSPACE/*.patch; do
+          for patch in ${{ github.workspace }}/myfiles/*.patch; do
             if [ -f "$patch" ]; then
               echo "Applying $patch"
               patch -p1 < "$patch" || true
             fi
           done
-          if [ -d "$GITHUB_WORKSPACE/patches" ]; then
-            for patch in $GITHUB_WORKSPACE/patches/*.patch; do
+          if [ -d "${{ github.workspace }}/myfiles/patches" ]; then
+            for patch in ${{ github.workspace }}/myfiles/patches/*.patch; do
               echo "Applying $patch"
               patch -p1 < "$patch" || true
             done
           fi
+
+      # ========== 自定义文件处理完毕，现在恢复缓存 ==========
+      - name: 缓存编译工具链及ccache
+        uses: klever1988/cachewrtbuild@main
+        with:
+          ccache: 'true'
+          mixkey: ${{ env.REPO_BRANCH }}-${{ env.DEVICE_NAME }}
+          prefix: ${{ github.workspace }}/openwrt
 
       - name: 调整 armv8.mk 确保设备启用
         run: |
@@ -129,9 +132,9 @@ jobs:
 
       - name: 运行 diy-part2
         run: |
-          chmod +x $DIY_P2_SH
+          chmod +x ${{ github.workspace }}/myfiles/$DIY_P2_SH
           cd openwrt
-          $GITHUB_WORKSPACE/$DIY_P2_SH
+          ${{ github.workspace }}/myfiles/$DIY_P2_SH
 
       - name: 生成 .config
         run: cd openwrt && make defconfig
