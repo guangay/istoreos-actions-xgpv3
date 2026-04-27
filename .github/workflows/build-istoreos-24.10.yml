@@ -20,7 +20,7 @@ env:
   REPO_URL: https://github.com/istoreos/istoreos
   REPO_BRANCH: istoreos-24.10
   DEVICE_NAME: nlnet_xiguapi-v3
-  DEVICE_TREE: rk3568-xiguapi-v3.dts
+  DEVICE_TREE: rk3568-xiguapi-v3
   UPLOAD_FIRMWARE: true
   TZ: Asia/Shanghai
   MY_REPO: https://github.com/guangay/istoreos-actions-xgpv3
@@ -77,23 +77,11 @@ jobs:
         run: |
           git clone $MY_REPO -b $MY_BRANCH ${{ github.workspace }}/myfiles
 
-      - name: 复制设备树文件到内核目录
+      - name: 复制设备树到内核目录
         run: |
           mkdir -p openwrt/target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/
-          cp ${{ github.workspace }}/myfiles/target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/${{ env.DEVICE_TREE }} \
+          cp ${{ github.workspace }}/myfiles/rk3568-xiguapi-v3.dts \
              openwrt/target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/
-
-      - name: 复制设备树文件到 uboot-rk35xx 目录
-        run: |
-          mkdir -p openwrt/package/boot/uboot-rk35xx/files/arch/arm/dts/rockchip/
-          cp ${{ github.workspace }}/myfiles/target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/${{ env.DEVICE_TREE }} \
-             openwrt/package/boot/uboot-rk35xx/files/arch/arm/dts/rockchip/
-
-      - name: 复制设备树文件到 uboot-rockchip 目录
-        run: |
-          mkdir -p openwrt/package/boot/uboot-rockchip/files/arch/arm/dts/rockchip/
-          cp ${{ github.workspace }}/myfiles/target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/${{ env.DEVICE_TREE }} \
-             openwrt/package/boot/uboot-rockchip/files/arch/arm/dts/rockchip/
 
       - name: 复制 armv8.mk
         run: |
@@ -166,35 +154,31 @@ jobs:
           make download -j8
           find dl -size -1024c -delete
 
-      # ==================== 修复后的编译步骤 ====================
-      - name: 编译固件（含 U-Boot 设备树修复）
+      # 关键修复：强制注入设备树到所有 U-Boot 源码目录
+      - name: 强制复制设备树到 U-Boot 源码树
+        run: |
+          cd openwrt
+          make package/boot/uboot-rk35xx/prepare V=s || true
+          make package/boot/uboot-rockchip/prepare V=s || true
+          DTS_SRC="${{ github.workspace }}/myfiles/rk3568-xiguapi-v3.dts"
+          if [ ! -f "$DTS_SRC" ]; then
+            echo "错误：找不到设备树源文件 $DTS_SRC"
+            exit 1
+          fi
+          find build_dir -type d -path "*/u-boot-*/u-boot-*/arch/arm/dts" | while read dts_dir; do
+            echo "处理 $dts_dir"
+            cp "$DTS_SRC" "$dts_dir/"
+            makefile="$dts_dir/Makefile"
+            if [ -f "$makefile" ] && ! grep -q "rk3568-xiguapi-v3.dtb" "$makefile"; then
+              sed -i '/^dtb-.*+=/a dtb-y += rk3568-xiguapi-v3.dtb' "$makefile"
+              echo "已修改 Makefile"
+            fi
+          done
+
+      - name: 编译固件
         id: compile
         run: |
           cd openwrt
-          # 第一步：单独准备 U-Boot 源码，以便复制缺失的设备树
-          echo "准备 U-Boot 源码..."
-          make package/boot/uboot-rk35xx/prepare V=s || true
-          make package/boot/uboot-rockchip/prepare V=s || true
-          
-          # 第二步：找到 U-Boot 源码目录并复制设备树
-          for uboot_dir in $(find build_dir/target-*/u-boot-* -type d -name "u-boot-*" 2>/dev/null); do
-            if [ -d "$uboot_dir" ]; then
-              echo "处理 U-Boot 目录: $uboot_dir"
-              # 复制设备树到 arch/arm/dts/ 根目录
-              cp ${{ github.workspace }}/myfiles/target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/${{ env.DEVICE_TREE }} \
-                 "$uboot_dir/arch/arm/dts/" 2>/dev/null || echo "复制到根目录失败"
-              # 复制到 rockchip 子目录（某些 U-Boot 版本需要）
-              mkdir -p "$uboot_dir/arch/arm/dts/rockchip"
-              cp ${{ github.workspace }}/myfiles/target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/${{ env.DEVICE_TREE }} \
-                 "$uboot_dir/arch/arm/dts/rockchip/" 2>/dev/null || echo "复制到 rockchip 子目录失败"
-              # 修复 Makefile：添加设备树到 dtb-y 列表
-              sed -i '/^dtb-.*+=/a dtb-$(CONFIG_TARGET_ROCKCHIP_RK3568) += rk3568-xiguapi-v3.dtb' \
-                 "$uboot_dir/arch/arm/dts/Makefile" 2>/dev/null || echo "修改 Makefile 失败"
-            fi
-          done
-          
-          # 第三步：继续完整编译
-          echo "开始完整编译..."
           make -j$(nproc) && echo "STATUS=success" >> $GITHUB_ENV || make -j1 V=s && echo "STATUS=success" >> $GITHUB_ENV
           echo "FILE_DATE=_$(date +'%Y%m%d%H%M')" >> $GITHUB_ENV
 
