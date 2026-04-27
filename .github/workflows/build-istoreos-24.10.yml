@@ -21,9 +21,6 @@ env:
   REPO_BRANCH: istoreos-24.10
   DEVICE_NAME: nlnet_xiguapi-v3
   DEVICE_TREE: rk3568-xiguapi-v3.dts
-  FEEDS_CONF: feeds.conf
-  DIY_P1_SH: diy-part1.sh
-  DIY_P2_SH: diy-part2.sh
   UPLOAD_FIRMWARE: true
   TZ: Asia/Shanghai
   MY_REPO: https://github.com/guangay/istoreos-actions-xgpv3
@@ -34,7 +31,7 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 600
     steps:
-      # 磁盘空间优化（保持不变）
+      # 磁盘空间优化
       - name: 最大化构建空间
         uses: easimon/maximize-build-space@master
         with:
@@ -73,7 +70,7 @@ jobs:
         run: |
           git clone $MY_REPO -b $MY_BRANCH ${{ github.workspace }}/myfiles
 
-      # ========== 先复制所有自定义文件 ==========
+      # ========== 从您的仓库复制自定义文件 ==========
       - name: 复制设备树文件
         run: |
           mkdir -p openwrt/target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/
@@ -85,20 +82,7 @@ jobs:
           cp ${{ github.workspace }}/myfiles/target/linux/rockchip/image/armv8.mk \
              openwrt/target/linux/rockchip/image/
 
-      - name: 复制 feeds 配置并执行 diy-part1
-        run: |
-          [ -e "${{ github.workspace }}/myfiles/$FEEDS_CONF" ] && cp "${{ github.workspace }}/myfiles/$FEEDS_CONF" openwrt/feeds.conf
-          chmod +x ${{ github.workspace }}/myfiles/$DIY_P1_SH
-          cd openwrt
-          ${{ github.workspace }}/myfiles/$DIY_P1_SH
-
-      - name: 更新 feeds
-        run: cd openwrt && ./scripts/feeds update -a
-
-      - name: 安装 feeds
-        run: cd openwrt && ./scripts/feeds install -a
-
-      - name: 应用自定义补丁（根目录下的 .patch）
+      - name: 应用补丁（根目录下的 .patch）
         run: |
           cd openwrt
           for patch in ${{ github.workspace }}/myfiles/*.patch; do
@@ -107,20 +91,21 @@ jobs:
               patch -p1 < "$patch" || true
             fi
           done
-          if [ -d "${{ github.workspace }}/myfiles/patches" ]; then
-            for patch in ${{ github.workspace }}/myfiles/patches/*.patch; do
-              echo "Applying $patch"
-              patch -p1 < "$patch" || true
-            done
-          fi
 
-      # ========== 自定义文件处理完毕，现在恢复缓存 ==========
-      #- name: 缓存编译工具链及ccache
-      #  uses: klever1988/cachewrtbuild@main
-      #  with:
-      #   ccache: 'true'
-      #    mixkey: ${{ env.REPO_BRANCH }}-${{ env.DEVICE_NAME }}
-      #    prefix: ${{ github.workspace }}/openwrt
+      # 注意：不再复制 feeds.conf，直接使用 iStoreOS 自带配置
+      - name: 更新 feeds
+        run: cd openwrt && ./scripts/feeds update -a
+
+      - name: 安装 feeds
+        run: cd openwrt && ./scripts/feeds install -a
+
+      # 缓存（放在 feeds 准备之后）
+      - name: 缓存编译工具链及ccache
+        uses: klever1988/cachewrtbuild@main
+        with:
+          ccache: 'true'
+          mixkey: ${{ env.REPO_BRANCH }}-${{ env.DEVICE_NAME }}
+          prefix: ${{ github.workspace }}/openwrt
 
       - name: 调整 armv8.mk 确保设备启用
         run: |
@@ -130,11 +115,11 @@ jobs:
             sed -i '/define Device\/nlnet_xiguapi-v3/a \  DEVICE_VARIANT := xiguapi-v3' target/linux/rockchip/image/armv8.mk
           fi
 
-      - name: 运行 diy-part2
+      - name: 运行 diy-part2（配置、屏幕驱动、QModem）
         run: |
-          chmod +x ${{ github.workspace }}/myfiles/$DIY_P2_SH
+          chmod +x ${{ github.workspace }}/myfiles/diy-part2.sh
           cd openwrt
-          ${{ github.workspace }}/myfiles/$DIY_P2_SH
+          ${{ github.workspace }}/myfiles/diy-part2.sh
 
       - name: 生成 .config
         run: cd openwrt && make defconfig
