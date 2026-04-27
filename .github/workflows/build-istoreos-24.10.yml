@@ -56,7 +56,7 @@ jobs:
           echo "=== 清理后磁盘 ==="
           df -h
 
-      # ==================== 编译环境初始化（修复 pyelftools 和 setuptools） ====================
+      # ==================== 初始化编译环境（含 pyelftools + setuptools） ====================
       - name: 初始化编译环境
         env:
           DEBIAN_FRONTEND: noninteractive
@@ -66,7 +66,7 @@ jobs:
             git libncurses5-dev libssl-dev rsync unzip zlib1g-dev swig libpython3-dev \
             python3 python3-pip python3-venv python3-dev aria2 jq subversion qemu-utils \
             ccache rename libelf-dev libgmp-dev libmpc-dev libmpfr-dev patch \
-            python3-pyelftools python3-setuptools
+            python3-pyelftools python3-setuptools python3-distutils
           pip3 install --user --upgrade --force-reinstall pyelftools pysocks unidecode requests || true
           python3 -c "import elftools; print('pyelftools import OK')" || { echo "pyelftools import failed"; exit 1; }
           sudo timedatectl set-timezone "$TZ"
@@ -106,17 +106,22 @@ jobs:
             fi
           done
 
-      # ==================== feeds（使用 iStoreOS 默认配置，不覆盖） ====================
+      # ==================== feeds（使用 iStoreOS 默认配置） ====================
       - name: 更新 feeds
-        run: cd openwrt && ./scripts/feeds update -a
+        run: |
+          cd openwrt
+          ./scripts/feeds update -a
+          ./scripts/feeds update packages
 
       - name: 安装 feeds
-        run: cd openwrt && ./scripts/feeds install -a
+        run: |
+          cd openwrt
+          ./scripts/feeds install -a -p packages
+          ./scripts/feeds install -a
 
-      # ==================== 注意：缓存步骤已禁用（因磁盘空间不足） ====================
-      # - name: 缓存编译工具链及ccache
+      # ==================== 禁用缓存（避免磁盘空间不足） ====================
+      # - name: 缓存编译工具链及ccache   # 已临时禁用
       #   uses: klever1988/cachewrtbuild@main
-      #   ...
 
       # ==================== 设备配置与第三方包集成 ====================
       - name: 调整 armv8.mk 确保设备启用
@@ -127,7 +132,7 @@ jobs:
             sed -i '/define Device\/nlnet_xiguapi-v3/a \  DEVICE_VARIANT := xiguapi-v3' target/linux/rockchip/image/armv8.mk
           fi
 
-      - name: 运行 diy-part2（配置、屏幕驱动、QModem）
+      - name: 运行 diy-part2（配置、屏幕驱动、QModem 及依赖）
         run: |
           chmod +x ${{ github.workspace }}/myfiles/diy-part2.sh
           cd openwrt
