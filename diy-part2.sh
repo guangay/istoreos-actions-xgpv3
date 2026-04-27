@@ -84,6 +84,9 @@ add_config CONFIG_PACKAGE_quectel-cm y
 echo ">>> 启用 QModem 包..."
 add_config CONFIG_PACKAGE_luci-app-qmodem y
 add_config CONFIG_PACKAGE_qmodem y
+add_config CONFIG_PACKAGE_kmod-mhi-wwan y
+sed -i 's/ +quectel-cm//g' package/feeds/qmodem/qmodem/Makefile
+sed -i 's/ +quectel-CM-5G//g' package/feeds/qmodem/qmodem/Makefile
 
 # 基本系统
 echo ">>> 基本系统配置..."
