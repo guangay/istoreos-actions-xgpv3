@@ -31,7 +31,7 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 600
     steps:
-      # 磁盘空间优化
+      # 加强版磁盘清理
       - name: 最大化构建空间
         uses: easimon/maximize-build-space@master
         with:
@@ -43,11 +43,18 @@ jobs:
           remove-codeql: 'true'
           remove-docker-images: 'true'
 
-      - name: 强制清理更多空间
+      - name: 强制清理更多空间（增强版）
         run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /usr/local/share/powershell /usr/local/share/chromium
+          echo "=== 清理前磁盘 ==="
+          df -h
+          sudo rm -rf /opt/hostedtoolcache
+          sudo rm -rf /usr/local/lib/android /usr/share/dotnet /usr/local/share/chromium /usr/local/share/powershell
+          sudo rm -rf /opt/ghc /usr/local/.ghcup
           sudo docker rmi -f $(docker images -q) 2>/dev/null || true
           sudo apt-get clean
+          sudo apt-get autoremove -y
+          echo "=== 清理后磁盘 ==="
+          df -h
 
       - name: 初始化编译环境
         run: |
@@ -70,7 +77,7 @@ jobs:
         run: |
           git clone $MY_REPO -b $MY_BRANCH ${{ github.workspace }}/myfiles
 
-      # ========== 从您的仓库复制自定义文件 ==========
+      # 复制自定义文件（设备树、armv8.mk、补丁）
       - name: 复制设备树文件
         run: |
           mkdir -p openwrt/target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/
@@ -92,20 +99,17 @@ jobs:
             fi
           done
 
-      # 注意：不再复制 feeds.conf，直接使用 iStoreOS 自带配置
+      # 不再使用自定义 feeds.conf，直接使用 iStoreOS 默认
       - name: 更新 feeds
         run: cd openwrt && ./scripts/feeds update -a
 
       - name: 安装 feeds
         run: cd openwrt && ./scripts/feeds install -a
 
-      # 缓存（放在 feeds 准备之后）
-      - name: 缓存编译工具链及ccache
-        uses: klever1988/cachewrtbuild@main
-        with:
-          ccache: 'true'
-          mixkey: ${{ env.REPO_BRANCH }}-${{ env.DEVICE_NAME }}
-          prefix: ${{ github.workspace }}/openwrt
+      # 注意：缓存步骤已禁用（因空间不足）
+      # - name: 缓存编译工具链及ccache
+      #   uses: klever1988/cachewrtbuild@main
+      #   ...
 
       - name: 调整 armv8.mk 确保设备启用
         run: |
