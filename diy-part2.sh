@@ -85,6 +85,9 @@ elif [ -d "$QMODEM_PKG" ]; then
 else
     git clone --depth 1 https://github.com/FUjr/QModem.git "$QMODEM_PKG"
     echo "✅ QModem 已克隆"
+    add_config CONFIG_PACKAGE_kmod-mhi-wwan y
+    add_config CONFIG_PACKAGE_quectel-CM-5G y
+    add_config CONFIG_PACKAGE_quectel-cm y
 fi
 
 # 添加 QModem 常用依赖包
