@@ -31,7 +31,6 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 600
     steps:
-      # ==================== 磁盘空间优化 ====================
       - name: 最大化构建空间
         uses: easimon/maximize-build-space@master
         with:
@@ -43,20 +42,15 @@ jobs:
           remove-codeql: 'true'
           remove-docker-images: 'true'
 
-      - name: 强制清理更多空间（增强版）
+      - name: 强制清理更多空间
         run: |
-          echo "=== 清理前磁盘 ==="
-          df -h
           sudo rm -rf /opt/hostedtoolcache
           sudo rm -rf /usr/local/lib/android /usr/share/dotnet /usr/local/share/chromium /usr/local/share/powershell
           sudo rm -rf /opt/ghc /usr/local/.ghcup
           sudo docker rmi -f $(docker images -q) 2>/dev/null || true
           sudo apt-get clean
           sudo apt-get autoremove -y
-          echo "=== 清理后磁盘 ==="
-          df -h
 
-      # ==================== 初始化编译环境（含 pyelftools + setuptools） ====================
       - name: 初始化编译环境
         env:
           DEBIAN_FRONTEND: noninteractive
@@ -67,24 +61,22 @@ jobs:
             python3 python3-pip python3-venv python3-dev aria2 jq subversion qemu-utils \
             ccache rename libelf-dev libgmp-dev libmpc-dev libmpfr-dev patch \
             python3-pyelftools python3-setuptools python3-distutils
-          pip3 install --user --upgrade --force-reinstall pyelftools pysocks unidecode requests || true
-          python3 -c "import elftools; print('pyelftools import OK')" || { echo "pyelftools import failed"; exit 1; }
+          pip3 install --user --upgrade pyelftools pysocks unidecode requests || true
+          python3 -c "import elftools; print('pyelftools ok')"
           sudo timedatectl set-timezone "$TZ"
           sudo mkdir -p /workdir
           sudo chown $USER:$GROUPS /workdir
 
-      # ==================== 克隆源码 ====================
       - name: 克隆 iStoreOS 源码
         working-directory: /workdir
         run: |
           git clone $REPO_URL -b $REPO_BRANCH openwrt
           ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
 
-      - name: 克隆您自己的仓库（包含设备树、补丁、脚本等）
+      - name: 克隆自定义仓库（设备树/补丁/脚本）
         run: |
           git clone $MY_REPO -b $MY_BRANCH ${{ github.workspace }}/myfiles
 
-      # ==================== 复制自定义文件到 iStoreOS 源码树 ====================
       - name: 复制设备树文件
         run: |
           mkdir -p openwrt/target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/
@@ -96,17 +88,18 @@ jobs:
           cp ${{ github.workspace }}/myfiles/target/linux/rockchip/image/armv8.mk \
              openwrt/target/linux/rockchip/image/
 
-      - name: 应用根目录下的补丁（例如 999-add-TD-TECH-option-id.patch）
+      - name: 应用补丁
         run: |
           cd openwrt
           for patch in ${{ github.workspace }}/myfiles/*.patch; do
-            if [ -f "$patch" ]; then
-              echo "Applying $patch"
-              patch -p1 < "$patch" || true
-            fi
+            [ -f "$patch" ] && patch -p1 < "$patch" || true
           done
 
-      # ==================== feeds（使用 iStoreOS 默认配置） ====================
+      - name: 添加 QModem feed
+        run: |
+          cd openwrt
+          echo 'src-git qmodem https://github.com/FUjr/QModem.git;main' >> feeds.conf.default
+
       - name: 更新 feeds
         run: |
           cd openwrt
@@ -119,12 +112,7 @@ jobs:
           ./scripts/feeds install -a -p packages
           ./scripts/feeds install -a
 
-      # ==================== 禁用缓存（避免磁盘空间不足） ====================
-      # - name: 缓存编译工具链及ccache   # 已临时禁用
-      #   uses: klever1988/cachewrtbuild@main
-
-      # ==================== 设备配置与第三方包集成 ====================
-      - name: 调整 armv8.mk 确保设备启用
+      - name: 调整 armv8.mk
         run: |
           cd openwrt
           sed -i '/nlnet_xiguapi-v3/s/^#//' target/linux/rockchip/image/armv8.mk
@@ -132,7 +120,7 @@ jobs:
             sed -i '/define Device\/nlnet_xiguapi-v3/a \  DEVICE_VARIANT := xiguapi-v3' target/linux/rockchip/image/armv8.mk
           fi
 
-      - name: 运行 diy-part2（配置、屏幕驱动、QModem 及依赖）
+      - name: 运行 diy-part2
         run: |
           chmod +x ${{ github.workspace }}/myfiles/diy-part2.sh
           cd openwrt
@@ -141,7 +129,6 @@ jobs:
       - name: 生成 .config
         run: cd openwrt && make defconfig
 
-      # ==================== 用户自定义配置 ====================
       - name: 修改 LAN IP
         if: github.event.inputs.lan_ip != ''
         run: |
@@ -154,19 +141,18 @@ jobs:
           cd openwrt
           sed -i "s/OpenWrt/${{ github.event.inputs.os_name }}/g" package/base-files/files/bin/config_generate
 
-      - name: 启用 WiFi（如需要）
+      - name: 启用 WiFi
         if: github.event.inputs.enable_wifi == 'true'
         run: |
           cd openwrt
           echo 'CONFIG_PACKAGE_kmod-mt7915e=y' >> .config
           echo 'CONFIG_PACKAGE_kmod-mt7603e=y' >> .config
 
-      # ==================== 下载与编译 ====================
       - name: 下载软件包
         run: |
           cd openwrt
           make download -j8
-          find dl -size -1024c -exec rm -f {} \;
+          find dl -size -1024c -delete
 
       - name: 编译固件
         id: compile
@@ -175,7 +161,6 @@ jobs:
           make -j$(nproc) && echo "STATUS=success" >> $GITHUB_ENV || make -j1 V=s && echo "STATUS=success" >> $GITHUB_ENV
           echo "FILE_DATE=_$(date +'%Y%m%d%H%M')" >> $GITHUB_ENV
 
-      # ==================== 产物处理 ====================
       - name: 整理固件
         if: env.STATUS == 'success'
         run: |
@@ -184,7 +169,7 @@ jobs:
           find bin/targets/ -type f \( -name "*.gz" -o -name "*.img" -o -name "*.bin" -o -name "*.tar" \) -exec cp {} artifacts/ \;
           cp .config artifacts/config.seed
 
-      - name: 上传固件（Artifact）
+      - name: 上传固件
         if: env.STATUS == 'success' && env.UPLOAD_FIRMWARE == 'true'
         uses: actions/upload-artifact@v4
         with:
