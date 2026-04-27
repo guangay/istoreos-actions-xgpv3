@@ -115,12 +115,12 @@ jobs:
           fi
 
       # ========== 自定义文件处理完毕，现在恢复缓存 ==========
-      - name: 缓存编译工具链及ccache
-        uses: klever1988/cachewrtbuild@main
-        with:
-          ccache: 'true'
-          mixkey: ${{ env.REPO_BRANCH }}-${{ env.DEVICE_NAME }}
-          prefix: ${{ github.workspace }}/openwrt
+      #- name: 缓存编译工具链及ccache
+      #  uses: klever1988/cachewrtbuild@main
+      #  with:
+      #   ccache: 'true'
+      #    mixkey: ${{ env.REPO_BRANCH }}-${{ env.DEVICE_NAME }}
+      #    prefix: ${{ github.workspace }}/openwrt
 
       - name: 调整 armv8.mk 确保设备启用
         run: |
