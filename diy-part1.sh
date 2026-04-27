@@ -1,7 +1,7 @@
 #!/bin/bash
 # =====================================================================
 # diy-part1.sh - 预编译脚本（简化版）
-# 按照 immortalwrt 官方规范：只加载基本配置和 xgpv3 支持
+# 只负责 feeds.conf 配置，不再复制文件（已在 YML 中完成）
 # =====================================================================
 
 echo "=== 执行 diy-part1.sh ==="
@@ -19,13 +19,13 @@ fi
 
 echo "openwrt 目录: $OPENWRT_DIR"
 
-# 复制 feeds 配置
+# 复制 feeds 配置（如果存在自定义文件）
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-FEEDS_CONF="$SCRIPT_DIR/rk35xx-24.10/feeds.conf"
+FEEDS_CONF="$SCRIPT_DIR/feeds.conf"   # 直接使用仓库根目录下的 feeds.conf
 
 if [ -f "$FEEDS_CONF" ]; then
     cp "$FEEDS_CONF" "$OPENWRT_DIR/feeds.conf.default"
-    echo "✅ feeds.conf 已复制"
+    echo "✅ 自定义 feeds.conf 已复制"
 else
     # 使用内联官方配置（无第三方）
     cat > "$OPENWRT_DIR/feeds.conf.default" << 'EOF'
