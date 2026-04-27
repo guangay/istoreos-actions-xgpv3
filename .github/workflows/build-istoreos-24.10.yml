@@ -125,6 +125,10 @@ jobs:
           chmod +x ${{ github.workspace }}/myfiles/diy-part2.sh
           cd openwrt
           ${{ github.workspace }}/myfiles/diy-part2.sh
+      - name: 修复 QModem 依赖警告
+        run: |
+          cd openwrt
+          sed -i 's/ +quectel-cm//g; s/ +quectel-CM-5G//g; s/ +kmod-mhi-wwan//g' package/feeds/qmodem/qmodem/Makefile      
 
       - name: 生成 .config
         run: cd openwrt && make defconfig
