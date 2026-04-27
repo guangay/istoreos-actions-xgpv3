@@ -31,7 +31,7 @@ jobs:
     runs-on: ubuntu-22.04
     timeout-minutes: 600
     steps:
-      # 加强版磁盘清理
+      # ==================== 磁盘空间优化 ====================
       - name: 最大化构建空间
         uses: easimon/maximize-build-space@master
         with:
@@ -56,28 +56,35 @@ jobs:
           echo "=== 清理后磁盘 ==="
           df -h
 
+      # ==================== 编译环境初始化（修复 pyelftools 和 setuptools） ====================
       - name: 初始化编译环境
+        env:
+          DEBIAN_FRONTEND: noninteractive
         run: |
           sudo -E apt-get -qq update
           sudo -E apt-get -qq install -y build-essential clang flex g++ gawk gcc-multilib gettext \
             git libncurses5-dev libssl-dev rsync unzip zlib1g-dev swig libpython3-dev \
             python3 python3-pip python3-venv python3-dev aria2 jq subversion qemu-utils \
-            ccache rename libelf-dev libgmp-dev libmpc-dev libmpfr-dev patch
+            ccache rename libelf-dev libgmp-dev libmpc-dev libmpfr-dev patch \
+            python3-pyelftools python3-setuptools
+          pip3 install --user --upgrade --force-reinstall pyelftools pysocks unidecode requests || true
+          python3 -c "import elftools; print('pyelftools import OK')" || { echo "pyelftools import failed"; exit 1; }
           sudo timedatectl set-timezone "$TZ"
           sudo mkdir -p /workdir
           sudo chown $USER:$GROUPS /workdir
 
+      # ==================== 克隆源码 ====================
       - name: 克隆 iStoreOS 源码
         working-directory: /workdir
         run: |
           git clone $REPO_URL -b $REPO_BRANCH openwrt
           ln -sf /workdir/openwrt $GITHUB_WORKSPACE/openwrt
 
-      - name: 克隆您自己的仓库（包含设备树、补丁等）
+      - name: 克隆您自己的仓库（包含设备树、补丁、脚本等）
         run: |
           git clone $MY_REPO -b $MY_BRANCH ${{ github.workspace }}/myfiles
 
-      # 复制自定义文件（设备树、armv8.mk、补丁）
+      # ==================== 复制自定义文件到 iStoreOS 源码树 ====================
       - name: 复制设备树文件
         run: |
           mkdir -p openwrt/target/linux/rockchip/files/arch/arm64/boot/dts/rockchip/
@@ -89,7 +96,7 @@ jobs:
           cp ${{ github.workspace }}/myfiles/target/linux/rockchip/image/armv8.mk \
              openwrt/target/linux/rockchip/image/
 
-      - name: 应用补丁（根目录下的 .patch）
+      - name: 应用根目录下的补丁（例如 999-add-TD-TECH-option-id.patch）
         run: |
           cd openwrt
           for patch in ${{ github.workspace }}/myfiles/*.patch; do
@@ -99,18 +106,19 @@ jobs:
             fi
           done
 
-      # 不再使用自定义 feeds.conf，直接使用 iStoreOS 默认
+      # ==================== feeds（使用 iStoreOS 默认配置，不覆盖） ====================
       - name: 更新 feeds
         run: cd openwrt && ./scripts/feeds update -a
 
       - name: 安装 feeds
         run: cd openwrt && ./scripts/feeds install -a
 
-      # 注意：缓存步骤已禁用（因空间不足）
+      # ==================== 注意：缓存步骤已禁用（因磁盘空间不足） ====================
       # - name: 缓存编译工具链及ccache
       #   uses: klever1988/cachewrtbuild@main
       #   ...
 
+      # ==================== 设备配置与第三方包集成 ====================
       - name: 调整 armv8.mk 确保设备启用
         run: |
           cd openwrt
@@ -128,6 +136,7 @@ jobs:
       - name: 生成 .config
         run: cd openwrt && make defconfig
 
+      # ==================== 用户自定义配置 ====================
       - name: 修改 LAN IP
         if: github.event.inputs.lan_ip != ''
         run: |
@@ -140,13 +149,14 @@ jobs:
           cd openwrt
           sed -i "s/OpenWrt/${{ github.event.inputs.os_name }}/g" package/base-files/files/bin/config_generate
 
-      - name: 启用 WiFi
+      - name: 启用 WiFi（如需要）
         if: github.event.inputs.enable_wifi == 'true'
         run: |
           cd openwrt
           echo 'CONFIG_PACKAGE_kmod-mt7915e=y' >> .config
           echo 'CONFIG_PACKAGE_kmod-mt7603e=y' >> .config
 
+      # ==================== 下载与编译 ====================
       - name: 下载软件包
         run: |
           cd openwrt
@@ -160,6 +170,7 @@ jobs:
           make -j$(nproc) && echo "STATUS=success" >> $GITHUB_ENV || make -j1 V=s && echo "STATUS=success" >> $GITHUB_ENV
           echo "FILE_DATE=_$(date +'%Y%m%d%H%M')" >> $GITHUB_ENV
 
+      # ==================== 产物处理 ====================
       - name: 整理固件
         if: env.STATUS == 'success'
         run: |
@@ -168,7 +179,7 @@ jobs:
           find bin/targets/ -type f \( -name "*.gz" -o -name "*.img" -o -name "*.bin" -o -name "*.tar" \) -exec cp {} artifacts/ \;
           cp .config artifacts/config.seed
 
-      - name: 上传固件
+      - name: 上传固件（Artifact）
         if: env.STATUS == 'success' && env.UPLOAD_FIRMWARE == 'true'
         uses: actions/upload-artifact@v4
         with:
