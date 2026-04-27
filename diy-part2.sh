@@ -1,6 +1,6 @@
 #!/bin/bash
 # =====================================================================
-# diy-part2.sh - 内核配置与软件包配置（简化版）
+# diy-part2.sh - 内核配置与软件包配置（含屏幕驱动 + QModem）
 # 按照 immortalwrt 官方规范配置 xgpv3
 # =====================================================================
 
@@ -152,6 +152,33 @@ else
     git clone --depth 1 https://github.com/junhong-l/xgp-v3-screen.git "$SCREEN_PKG"
     echo "✅ xgp-v3-screen 已克隆"
 fi
+
+# =====================================================================
+# QModem 支持（4G/5G 模块管理）
+# =====================================================================
+echo ">>> 配置 QModem..."
+
+QMODEM_LOCAL="$SCRIPT_DIR/QModem"
+QMODEM_PKG="package/QModem"
+
+if [ -d "$QMODEM_LOCAL" ]; then
+    rm -rf "$QMODEM_PKG"
+    cp -r "$QMODEM_LOCAL" "$QMODEM_PKG"
+    echo "✅ 使用本地 QModem"
+elif [ -d "$QMODEM_PKG" ]; then
+    echo "✅ QModem 已存在"
+else
+    # 从 GitHub 克隆
+    git clone --depth 1 https://github.com/FUjr/QModem.git "$QMODEM_PKG"
+    echo "✅ QModem 已克隆"
+fi
+
+# 根据 QModem 需要，添加常用依赖包（可根据实际需求调整）
+add_config CONFIG_PACKAGE_qmi y
+add_config CONFIG_PACKAGE_uqmi y
+add_config CONFIG_PACKAGE_modemmanager y
+add_config CONFIG_PACKAGE_libqmi y
+add_config CONFIG_PACKAGE_libmbim y
 
 # =====================================================================
 # 基本系统配置
