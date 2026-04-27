@@ -112,14 +112,6 @@ jobs:
           ./scripts/feeds install -a -p packages
           ./scripts/feeds install -a
 
-      - name: 调整 armv8.mk
-        run: |
-          cd openwrt
-          sed -i '/nlnet_xiguapi-v3/s/^#//' target/linux/rockchip/image/armv8.mk
-          if ! grep -q "DEVICE_VARIANT := xiguapi-v3" target/linux/rockchip/image/armv8.mk; then
-            sed -i '/define Device\/nlnet_xiguapi-v3/a \  DEVICE_VARIANT := xiguapi-v3' target/linux/rockchip/image/armv8.mk
-          fi
-
       - name: 运行 diy-part2
         run: |
           chmod +x ${{ github.workspace }}/myfiles/diy-part2.sh
@@ -154,7 +146,7 @@ jobs:
           make download -j8
           find dl -size -1024c -delete
 
-      # 关键修复：强制注入设备树到所有 U-Boot 源码目录
+      # 强制注入设备树到 U-Boot 源码（仅处理目标设备）
       - name: 强制复制设备树到 U-Boot 源码树
         run: |
           cd openwrt
